@@ -17,6 +17,7 @@ import com.atvplayer.data.ImageSettings
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
+import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 
 data class TrackItem(val id: Int, val name: String)
@@ -74,7 +75,7 @@ class PlayerController(ctx: Context, initialImage: ImageSettings) {
         error = false; buffering = true
         audioTracks = emptyList(); subTracks = emptyList()
         val media = Media(libVlc, Uri.parse(url)).apply {
-            setHWDecoding(true)
+            addOption(":avcodec-hw=any")
             addOption(":network-caching=1500")
         }
         mp.media = media
@@ -98,7 +99,7 @@ class PlayerController(ctx: Context, initialImage: ImageSettings) {
 
     /** Ajoute un fichier .srt externe. */
     fun addSubtitle(uri: Uri) {
-        mp.addSlave(Media.Slave.Type.Subtitle, uri, true)
+        mp.addSlave(IMedia.Slave.Type.Subtitle, uri, true)
         main.postDelayed({ refreshTracks() }, 800)
     }
 
