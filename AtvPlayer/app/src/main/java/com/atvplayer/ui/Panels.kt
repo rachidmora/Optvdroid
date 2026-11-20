@@ -217,7 +217,7 @@ private fun ImageControls(c: PlayerController) {
 @Composable
 private fun QualityPanel(c: PlayerController) {
     SectionTitle("Format d'image")
-    ChipRow(Aspect.values().toList(), c.aspect, { it.label }) { c.setAspect(it) }
+    ChipRow(Aspect.values().toList(), c.aspect, { it.label }) { c.changeAspect(it) }
 
     SectionTitle("Netteté (texte, logos)")
     if (c.sharpnessSupported) {
@@ -227,10 +227,10 @@ private fun QualityPanel(c: PlayerController) {
     }
 
     SectionTitle("Désentrelacement")
-    ChipRow(Deint.values().toList(), c.deint, { it.label }) { c.setDeint(it) }
+    ChipRow(Deint.values().toList(), c.deint, { it.label }) { c.changeDeint(it) }
 
     SectionTitle("Décodage")
-    ChipRow(listOf(true, false), c.hardware, { if (it) "Matériel" else "Logiciel" }) { c.setHardware(it) }
+    ChipRow(listOf(true, false), c.hardware, { if (it) "Matériel" else "Logiciel" }) { c.changeHardware(it) }
     Hint("Désentrelacement et décodage relancent la chaîne. Si l'image est floue, la source (flux du récepteur) est peut-être en basse résolution.")
 }
 

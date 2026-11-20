@@ -176,7 +176,7 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
     fun clearMessage() { message = null }
 
     // ---------- Qualité ----------
-    fun setAspect(a: Aspect) {
+    fun changeAspect(a: Aspect) {
         aspect = a
         when (a) {
             Aspect.Fit -> { mp.setAspectRatio(null); mp.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT }
@@ -186,8 +186,8 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
         }
     }
 
-    fun setDeint(d: Deint) { deint = d; replay() }
-    fun setHardware(h: Boolean) { hardware = h; replay() }
+    fun changeDeint(d: Deint) { deint = d; replay() }
+    fun changeHardware(h: Boolean) { hardware = h; replay() }
 
     // ---------- Réglages d'image ----------
     fun updateImage(s: ImageSettings) { image = s; applyImage() }
