@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import android.text.Html
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -33,13 +34,26 @@ class OpenWebIfApi(private val cfg: BoxConfig) {
         }
     }
 
+    /** Décode les entités HTML (&quot; &#x27; ...) présentes dans l'EPG. */
+    private fun clean(s: String): String {
+        var t = s
+        repeat(2) { t = Html.fromHtml(t, Html.FROM_HTML_MODE_LEGACY).toString() }
+        return t.trim()
+    }
+
+    /** "## ( SPORT ) ##  ::|| 27.06.2026 ||::" -> "SPORT" */
+    private fun cleanBouquet(s: String): String =
+        clean(s).replace(Regex("::\\|\\|.*?\\|\\|::"), " ")
+            .replace(Regex("[#«»()\\[\\]]"), " ")
+            .replace(Regex("\\s+"), " ").trim()
+
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
     /** Liste des bouquets TV. */
     suspend fun bouquets(): List<Bouquet> {
         val arr = getJson("/api/getservices").optJSONArray("services") ?: return emptyList()
         return (0 until arr.length()).map { arr.getJSONObject(it) }
-            .map { Bouquet(it.getString("servicereference"), it.optString("servicename")) }
+            .map { Bouquet(it.getString("servicereference"), cleanBouquet(it.optString("servicename")).ifBlank { it.optString("servicename") }) }
     }
 
     /** Chaînes d'un bouquet (les marqueurs/séparateurs sont ignorés). */
@@ -49,7 +63,7 @@ class OpenWebIfApi(private val cfg: BoxConfig) {
         var n = 0
         return (0 until arr.length()).map { arr.getJSONObject(it) }
             .filter { !it.getString("servicereference").startsWith("1:64:") }
-            .map { Channel(it.getString("servicereference"), it.optString("servicename"), ++n) }
+            .map { Channel(it.getString("servicereference"), clean(it.optString("servicename")), ++n) }
     }
 
     private suspend fun epg(path: String): Map<String, EpgEvent> {
@@ -61,9 +75,9 @@ class OpenWebIfApi(private val cfg: BoxConfig) {
             val begin = e.optLong("begin_timestamp")
             if (title.isBlank() || begin == 0L) continue
             out[e.optString("sref").trimEnd(':')] = EpgEvent(
-                title = title,
-                shortDesc = e.optString("shortdesc"),
-                longDesc = e.optString("longdesc"),
+                title = clean(title),
+                shortDesc = clean(e.optString("shortdesc")),
+                longDesc = clean(e.optString("longdesc")),
                 begin = begin,
                 duration = e.optLong("duration_sec"),
             )
@@ -77,8 +91,21 @@ class OpenWebIfApi(private val cfg: BoxConfig) {
     /** Programme suivant pour toutes les chaînes du bouquet. */
     suspend fun epgNext(bouquetRef: String) = epg("/api/epgnext?bRef=${enc(bouquetRef)}")
 
-    /** Picon : /picon/1_0_19_..._0_0_0.png */
-    fun piconUrl(ch: Channel) = "$base/picon/${ch.key.replace(':', '_')}.png"
+    /** Picons candidats, essayés dans l'ordre jusqu'à ce qu'un existe. */
+    fun piconUrls(ch: Channel): List<String> {
+        val sref = ch.key.replace(':', '_')
+        val list = mutableListOf("$base/picon/$sref.png")
+        // IPTV (4097/5001/5002...) : les picons sont souvent nommés comme un service DVB "1_"
+        val parts = ch.key.split(':')
+        if (parts.isNotEmpty() && parts[0] != "1") {
+            list += "$base/picon/${(listOf("1") + parts.drop(1)).joinToString("_")}.png"
+        }
+        // Nom SNP (ex: "sky sport 1 hd" -> skysport1hd)
+        val snp = ch.name.lowercase().replace("&", "and").replace("+", "plus").replace(Regex("[^a-z0-9]"), "")
+        if (snp.isNotBlank()) list += "$base/picon/$snp.png"
+        list += "$base/picon/${ch.name}.png"
+        return list
+    }
 
     /** Flux TS direct (port 8001 par défaut). */
     fun streamUrl(ch: Channel): String {

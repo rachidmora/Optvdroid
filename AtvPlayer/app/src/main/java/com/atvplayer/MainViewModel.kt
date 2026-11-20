@@ -23,7 +23,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var now by mutableStateOf<Map<String, EpgEvent>>(emptyMap()); private set
     var next by mutableStateOf<Map<String, EpgEvent>>(emptyMap()); private set
     var current by mutableStateOf<Channel?>(null); private set
-    var playing by mutableStateOf(false)
+    var showList by mutableStateOf(true)
+    var keyHandler: ((Int) -> Boolean)? = null
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
 
@@ -57,6 +58,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 channels = api.channels(b.ref)
                 error = null
+                if (current == null && channels.isNotEmpty()) {
+                    current = channels.firstOrNull { it.ref == prefs.lastRef } ?: channels.first()
+                }
             } catch (e: Exception) { error = e.message; return@launch }
             while (true) {
                 try {
@@ -68,12 +72,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun play(ch: Channel) { current = ch; playing = true }
+    fun play(ch: Channel) { current = ch; prefs.lastRef = ch.ref }
 
     /** Zapping +1 / -1 dans le bouquet courant. */
     fun zap(delta: Int) {
         if (channels.isEmpty()) return
         val i = channels.indexOfFirst { it.ref == current?.ref }.coerceAtLeast(0)
-        current = channels[(i + delta + channels.size) % channels.size]
+        play(channels[(i + delta + channels.size) % channels.size])
     }
 }

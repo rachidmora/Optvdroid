@@ -34,6 +34,7 @@ data class ImageSettings(
     val saturation: Float = 1f,   // 0..2
     val contrast: Float = 1f,     // 0.5..1.5
     val brightness: Float = 0f,   // -0.5..0.5
+    val sharpness: Float = 0f,    // 0..2 (Android 13+)
 ) {
     val isDefault get() = this == ImageSettings()
 }

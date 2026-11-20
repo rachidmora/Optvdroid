@@ -22,9 +22,14 @@ class Prefs(ctx: Context) {
         saturation = sp.getFloat("sat", 1f),
         contrast = sp.getFloat("con", 1f),
         brightness = sp.getFloat("bri", 0f),
+        sharpness = sp.getFloat("shp", 0f),
     )
 
     fun saveImage(s: ImageSettings) = sp.edit()
         .putFloat("sat", s.saturation).putFloat("con", s.contrast)
-        .putFloat("bri", s.brightness).apply()
+        .putFloat("bri", s.brightness).putFloat("shp", s.sharpness).apply()
+
+    var lastRef: String
+        get() = sp.getString("lastRef", "") ?: ""
+        set(v) { sp.edit().putString("lastRef", v).apply() }
 }

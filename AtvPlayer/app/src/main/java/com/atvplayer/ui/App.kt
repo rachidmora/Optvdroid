@@ -1,6 +1,5 @@
 package com.atvplayer.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -21,12 +20,7 @@ import com.atvplayer.data.BoxConfig
 fun App(vm: MainViewModel) {
     var showSetup by remember { mutableStateOf(vm.config.host.isBlank()) }
 
-    if (vm.playing) {
-        BackHandler { vm.playing = false }
-        PlayerScreen(vm, onClose = { vm.playing = false })
-    } else {
-        ChannelListScreen(vm, onOpenSettings = { showSetup = true })
-    }
+    PlayerScreen(vm, onOpenSettings = { showSetup = true })
 
     if (showSetup) SetupDialog(vm.config, onDismiss = { showSetup = false }) {
         vm.saveConfig(it); showSetup = false
