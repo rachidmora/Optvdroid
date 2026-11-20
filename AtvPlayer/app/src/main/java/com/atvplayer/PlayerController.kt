@@ -40,12 +40,12 @@ uniform half sharp;
 half4 main(float2 p) {
     half4 c = content.eval(p);
     if (sharp > 0.0) {
-        half4 n = content.eval(p + float2(0.0, -1.0));
-        half4 s = content.eval(p + float2(0.0, 1.0));
-        half4 e = content.eval(p + float2(1.0, 0.0));
-        half4 w = content.eval(p + float2(-1.0, 0.0));
+        half4 n = content.eval(p + float2(0.0, -1.5));
+        half4 s = content.eval(p + float2(0.0, 1.5));
+        half4 e = content.eval(p + float2(1.5, 0.0));
+        half4 w = content.eval(p + float2(-1.5, 0.0));
         half4 blur = (n + s + e + w) * 0.25;
-        c.rgb = c.rgb + (c.rgb - blur.rgb) * sharp;
+        c.rgb = c.rgb + (c.rgb - blur.rgb) * sharp * 2.0;
     }
     half l = dot(c.rgb, half3(0.299, 0.587, 0.114));
     c.rgb = mix(half3(l), c.rgb, sat);
@@ -83,6 +83,7 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
     var deint by mutableStateOf(Deint.Auto); private set
     var hardware by mutableStateOf(true); private set
     var message by mutableStateOf<String?>(null); private set
+    var vlcSharpen by mutableStateOf(0f); private set
 
     val sharpnessSupported get() = Build.VERSION.SDK_INT >= 33
 
@@ -116,6 +117,12 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
         val media = Media(libVlc, Uri.parse(url)).apply {
             addOption(if (hardware) ":avcodec-hw=any" else ":avcodec-hw=none")
             addOption(":network-caching=1500")
+            if (vlcSharpen > 0f) {
+                // Filtre VLC logiciel : décodage vers buffers (pas de rendu direct) pour pouvoir filtrer
+                addOption(":no-mediacodec-dr")
+                addOption(":video-filter=sharpen")
+                addOption(":sharpen-sigma=$vlcSharpen")
+            }
             when (deint) {
                 Deint.Off -> addOption(":deinterlace=0")
                 Deint.On -> { addOption(":deinterlace=1"); addOption(":deinterlace-mode=yadif") }
@@ -186,6 +193,8 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
         }
     }
 
+    fun changeVlcSharpen(v: Float) { vlcSharpen = v; replay() }
+    fun previewVlcSharpen(v: Float) { vlcSharpen = v }
     fun changeDeint(d: Deint) { deint = d; replay() }
     fun changeHardware(h: Boolean) { hardware = h; replay() }
 

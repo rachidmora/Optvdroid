@@ -219,9 +219,13 @@ private fun QualityPanel(c: PlayerController) {
     SectionTitle("Format d'image")
     ChipRow(Aspect.values().toList(), c.aspect, { it.label }) { c.changeAspect(it) }
 
-    SectionTitle("Netteté (texte, logos)")
+    SectionTitle("Netteté VLC (recommandée)")
+    LabeledSlider("Netteté", c.vlcSharpen, 0f..2f, onFinished = { c.changeVlcSharpen(c.vlcSharpen) }) { c.previewVlcSharpen(it) }
+    Hint("Filtre logiciel de VLC : relâche le curseur pour appliquer (la chaîne se relance). Plus gourmand en processeur.")
+
+    SectionTitle("Netteté GPU (Android 13+)")
     if (c.sharpnessSupported) {
-        LabeledSlider("Netteté", c.image.sharpness, 0f..2f) { c.updateImage(c.image.copy(sharpness = it)) }
+        LabeledSlider("Netteté GPU", c.image.sharpness, 0f..2f) { c.updateImage(c.image.copy(sharpness = it)) }
     } else {
         Hint("Nécessite Android 13 ou plus.")
     }
@@ -290,10 +294,13 @@ private fun DelayControl(valueMs: Int, onChange: (Int) -> Unit) {
 }
 
 @Composable
-private fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, set: (Float) -> Unit) {
+private fun LabeledSlider(
+    label: String, value: Float, range: ClosedFloatingPointRange<Float>,
+    onFinished: (() -> Unit)? = null, set: (Float) -> Unit,
+) {
     Column(Modifier.padding(top = 12.dp)) {
         Text("$label : ${"%.2f".format(value)}", color = Color.White, fontSize = 14.sp)
-        Slider(value, set, valueRange = range)
+        Slider(value, set, valueRange = range, onValueChangeFinished = onFinished)
     }
 }
 
