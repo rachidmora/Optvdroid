@@ -13,6 +13,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -125,6 +127,13 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
                 }
             }
             .pointerInput(Unit) {
+                var accX = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { accX = 0f },
+                    onDragEnd = { if (!vm.showList && panel == Panel.None && accX > 120f) vm.showList = true },
+                ) { _, dx -> accX += dx }
+            }
+            .pointerInput(Unit) {
                 var acc = 0f
                 detectVerticalDragGestures(
                     onDragStart = { acc = 0f },
@@ -160,6 +169,7 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             if (ch != null) InfoBar(vm, ch, nowSec,
                 onRed = { toggle(Panel.Audio) }, onGreen = { toggle(Panel.Subs) },
                 onYellow = { toggle(Panel.Image) }, onBlue = { toggle(Panel.Quality) },
+                onList = { vm.showList = true },
             )
         }
 
@@ -193,6 +203,7 @@ private fun InfoBar(
     ch: Channel,
     nowSec: Long,
     onRed: () -> Unit, onGreen: () -> Unit, onYellow: () -> Unit, onBlue: () -> Unit,
+    onList: () -> Unit,
 ) {
     val now = vm.now[ch.key]
     val next = vm.next[ch.key]
@@ -230,6 +241,13 @@ private fun InfoBar(
         if (next != null) {
             Text("Ensuite  ${fmtTime(next.begin)}  ${next.title}", color = Pal.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         }
-        ColorKeys(onRed, onGreen, onYellow, onBlue, Modifier.padding(top = 12.dp))
+        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.clip(RoundedCornerShape(50)).background(Color(0x33FFFFFF))
+                    .clickable(onClick = onList).padding(horizontal = 18.dp, vertical = 9.dp),
+            ) { Text("☰  Chaînes", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+            Spacer(Modifier.width(12.dp))
+            ColorKeys(onRed, onGreen, onYellow, onBlue)
+        }
     }
 }
