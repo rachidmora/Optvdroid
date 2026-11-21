@@ -72,4 +72,23 @@ class Prefs(ctx: Context) {
     var lastRef: String
         get() = sp.getString("lastRef", "") ?: ""
         set(v) { sp.edit().putString("lastRef", v).apply() }
+
+    // Qualité vidéo : mémorisée, appliquée à toutes les chaînes
+    var vlcSharpen: Float
+        get() = sp.getFloat("vlcSharpen", 0f)
+        set(v) { sp.edit().putFloat("vlcSharpen", v).apply() }
+    var deint: Int
+        get() = sp.getInt("deint", 0)
+        set(v) { sp.edit().putInt("deint", v).apply() }
+    var hardware: Boolean
+        get() = sp.getBoolean("hardware", true)
+        set(v) { sp.edit().putBoolean("hardware", v).apply() }
+    var aspect: Int
+        get() = sp.getInt("aspect", 0)
+        set(v) { sp.edit().putInt("aspect", v).apply() }
+
+    // Langue audio préférée : "" = piste d'origine de la chaîne
+    var audioLang: String
+        get() = sp.getString("audioLang", "") ?: ""
+        set(v) { sp.edit().putString("audioLang", v).apply() }
 }

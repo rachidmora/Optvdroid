@@ -4,6 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,7 +40,7 @@ fun Picon(api: OpenWebIfApi, ch: Channel, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val urls = remember(ch.ref, api) { api.piconUrls(ch) }
     var idx by remember(ch.ref, api) { mutableIntStateOf(0) }
-    Box(modifier.clip(RoundedCornerShape(10.dp)).background(Pal.SurfaceHi), contentAlignment = Alignment.Center) {
+    Box(modifier.clip(RectangleShape).background(Pal.SurfaceHi), contentAlignment = Alignment.Center) {
         if (idx < urls.size) {
             val url = urls[idx]
             val req = remember(url, api) {
@@ -52,30 +60,32 @@ fun Picon(api: OpenWebIfApi, ch: Channel, modifier: Modifier = Modifier) {
     }
 }
 
-val KeyRed = Color(0xFFE53935)
-val KeyGreen = Color(0xFF43A047)
-val KeyYellow = Color(0xFFFDD835)
-val KeyBlue = Color(0xFF1E88E5)
+val KeyRed = Color(0xFFE5301F)
+val KeyGreen = Color(0xFF4CAF2E)
+val KeyYellow = Color(0xFFF2C500)
+val KeyBlue = Color(0xFF1E88C7)
 
-/** Les 4 touches couleur de télécommande : rouge=Audio, vert=Sous-titres, jaune=Image, bleu=Qualité. */
+/** Les 4 touches couleur façon Metrix : carré de couleur + libellé. Rouge=Audio, vert=Sous-titres, jaune=Image, bleu=Qualité. */
 @Composable
 fun ColorKeys(
     onRed: () -> Unit, onGreen: () -> Unit, onYellow: () -> Unit, onBlue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ColorKey(KeyRed, "Audio", Color.White, onRed)
-        ColorKey(KeyGreen, "Sous-titres", Color.White, onGreen)
-        ColorKey(KeyYellow, "Image", Color.Black, onYellow)
-        ColorKey(KeyBlue, "Qualité", Color.White, onBlue)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
+        ColorKey(KeyRed, "Audio", Icons.Default.VolumeUp, onRed)
+        ColorKey(KeyGreen, "Sous-titres", Icons.Default.ClosedCaption, onGreen)
+        ColorKey(KeyYellow, "Image", Icons.Default.WbSunny, onYellow)
+        ColorKey(KeyBlue, "Qualité", Icons.Default.Tune, onBlue)
     }
 }
 
 @Composable
-private fun ColorKey(color: Color, label: String, textColor: Color, onClick: () -> Unit) {
-    Box(
-        Modifier.clip(RoundedCornerShape(50)).background(color).clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 9.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(label, color = textColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+private fun ColorKey(color: Color, label: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(Modifier.clickable(onClick = onClick).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(20.dp).background(color))
+        Spacer(Modifier.width(8.dp))
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(5.dp))
+        Text(label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Normal)
+    }
 }

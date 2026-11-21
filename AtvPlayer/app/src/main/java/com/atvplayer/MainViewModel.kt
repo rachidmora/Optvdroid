@@ -64,11 +64,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var posters by mutableStateOf<Map<String, String?>>(emptyMap()); private set
     private val posterRequested = HashSet<String>()
 
-    /** Poster TMDB du programme (si une clé est configurée). */
+    var posterError by mutableStateOf<String?>(null); private set
+
+    /** Affiche du programme : TMDB si une clé existe, sinon recherche sans clé. */
     fun ensurePoster(title: String) {
-        if (config.tmdbKey.isBlank() || !posterRequested.add(title)) return
+        if (!posterRequested.add(title)) return
         viewModelScope.launch {
-            val url = try { Tmdb(config.tmdbKey).poster(title) } catch (_: Exception) { null }
+            val t = Tmdb(config.tmdbKey)
+            val url = try { t.poster(title) } catch (_: Exception) { null }
+            posterError = t.lastError
             posters = posters + (title to url)
         }
     }

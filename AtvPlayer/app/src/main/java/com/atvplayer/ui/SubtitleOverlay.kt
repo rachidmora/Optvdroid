@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.atvplayer.SubStyle
 import com.atvplayer.SubtitleEngine
-import com.atvplayer.TransMode
 import kotlinx.coroutines.delay
 
 /** Police arabe (Tajawal) téléchargée au build ; repli sur la police du système si absente. */
@@ -42,42 +41,27 @@ private fun rememberSubFont(): FontFamily {
     }
 }
 
-/** Affiche la réplique courante du .srt, style chaînes arabes (blanc, contour noir, gras), avec traduction optionnelle. */
+/** Affiche la réplique courante du .srt, style chaînes arabes (blanc, contour noir, gras). */
 @Composable
 fun BoxScope.SubtitleOverlay(e: SubtitleEngine) {
     if (!e.loaded || !e.visible) return
-    // (texte original, traduction si prête)
-    var shown by remember { mutableStateOf<Pair<String, String?>?>(null) }
-    LaunchedEffect(e.cues, e.offsetMs, e.originMs, e.transOn) {
+    var shown by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(e.cues, e.offsetMs, e.originMs) {
         while (true) {
             val cue = e.cueAt(e.positionMs())
-            shown = if (cue == null) null else {
-                if (e.transOn) e.prefetch(cue.idx)
-                cue.text to e.translated(cue)
-            }
+            shown = cue?.text
             delay(120)
         }
     }
-    val (orig, tr) = shown ?: return
+    val text = shown ?: return
     val font = rememberSubFont()
     val fill = if (e.yellow) Color(0xFFFFEB3B) else Color.White
 
-    val main: String
-    var second: String? = null
-    when {
-        !e.transOn || e.transMode == TransMode.Original -> main = orig
-        e.transMode == TransMode.Translated -> main = tr ?: orig
-        else -> { main = tr ?: orig; if (tr != null) second = orig }
-    }
     Column(
         Modifier.align(Alignment.BottomCenter).fillMaxWidth(0.82f).padding(bottom = e.bottomDp.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        StyledSub(main, e.style, e.textSize, font, fill, 1f)
-        second?.let {
-            Spacer(Modifier.height(4.dp))
-            StyledSub(it, e.style, e.textSize * 0.68f, font, fill, 0.85f)
-        }
+        StyledSub(text, e.style, e.textSize, font, fill, 1f)
     }
 }
 
@@ -98,58 +82,6 @@ fun StyledSub(t: String, style: SubStyle, size: Float, font: FontFamily, fill: C
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xB3000000)).padding(horizontal = 16.dp, vertical = 6.dp),
             )
             SubStyle.Plain -> Text(t, style = base.copy(color = fill.copy(alpha = alpha), shadow = Shadow(Color.Black, Offset(2f, 2f), 4f)))
-        }
-    }
-}
-
-/** Traduction des sous-titres de la chaîne (reconnus à l'image) : remplace ou complète l'original. */
-@Composable
-fun OcrTranslationOverlay(e: SubtitleEngine) {
-    if (!e.ocrOn) return
-    val rect = e.ocrRect
-    val tr = e.ocrTranslated
-    var origin by remember { mutableStateOf(Offset.Zero) }
-    var size by remember { mutableStateOf(IntSize.Zero) }
-    val density = LocalDensity.current
-    val font = rememberSubFont()
-    val fill = if (e.yellow) Color(0xFFFFEB3B) else Color.White
-    Box(
-        Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInWindow(); size = it.size },
-    ) {
-        if (rect != null && tr != null && e.transMode != TransMode.Original && size.height > 0) {
-            val pad = with(density) { 8.dp.toPx() }
-            val left = rect.left - origin.x
-            val top = rect.top - origin.y
-            val bottom = rect.bottom - origin.y
-            if (e.transMode == TransMode.Translated) {
-                // 1) masque l'original  2) affiche la traduction au même endroit
-                Box(
-                    Modifier.offset { IntOffset((left - pad * 2).roundToInt(), (top - pad).roundToInt()) }
-                        .size(
-                            width = with(density) { (rect.width() + pad * 4).toDp() },
-                            height = with(density) { (rect.height() + pad * 2).toDp() },
-                        )
-                        .clip(RoundedCornerShape(8.dp)).background(Color(0xFF0B0B0B)),
-                )
-                Box(
-                    Modifier.fillMaxSize().padding(top = with(density) { (top - pad).coerceAtLeast(0f).toDp() }),
-                    contentAlignment = Alignment.TopCenter,
-                ) {
-                    Box(Modifier.fillMaxWidth(0.82f), contentAlignment = Alignment.TopCenter) {
-                        StyledSub(tr, SubStyle.Osn, e.textSize, font, fill, 1f)
-                    }
-                }
-            } else {
-                // Les deux : traduction juste au-dessus de l'original
-                Box(
-                    Modifier.fillMaxSize().padding(bottom = with(density) { (size.height - (top - pad)).coerceAtLeast(0f).toDp() }),
-                    contentAlignment = Alignment.BottomCenter,
-                ) {
-                    Box(Modifier.fillMaxWidth(0.82f), contentAlignment = Alignment.BottomCenter) {
-                        StyledSub(tr, e.style, e.textSize * 0.9f, font, fill, 1f)
-                    }
-                }
-            }
         }
     }
 }

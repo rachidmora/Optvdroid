@@ -14,8 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import com.google.mlkit.nl.translate.TranslateLanguage
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -42,7 +42,6 @@ import com.atvplayer.MainViewModel
 import com.atvplayer.PlayerController
 import com.atvplayer.SubtitleEngine
 import com.atvplayer.SubStyle
-import com.atvplayer.TransMode
 import com.atvplayer.Enc
 import com.atvplayer.TrackItem
 import com.atvplayer.data.Channel
@@ -80,20 +79,18 @@ fun ChannelPanel(
 
     Column(
         Modifier.fillMaxHeight().fillMaxWidth(0.5f)
-            .background(Brush.horizontalGradient(listOf(Color(0xF20B0F1A), Color(0xE60B0F1A), Color(0x990B0F1A))))
+            .background(Pal.Panel)
             .statusBarsPadding().navigationBarsPadding()
-            .pointerInput(Unit) { detectTapGestures { } }
-            .padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+            .pointerInput(Unit) { detectTapGestures { } },
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().background(Pal.PanelDark).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(vm.selected?.name ?: "Chaînes", color = Pal.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                Text(vm.selected?.name ?: "Chaînes", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Light,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${list.size} chaînes", color = Pal.Muted, fontSize = 12.sp)
+                Text("Bouquet · ${list.size} chaînes", color = Pal.Muted, fontSize = 12.sp)
             }
-            Box(Modifier.clip(RoundedCornerShape(10.dp)).background(Pal.Surface).padding(horizontal = 12.dp, vertical = 6.dp)) {
-                Text(clock, color = Pal.Accent, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
+            Text(clock, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Light)
+            Spacer(Modifier.width(6.dp))
             IconButton({ searching = !searching; if (!searching) query = "" }) { Icon(Icons.Default.Search, "Rechercher", tint = Pal.Muted) }
             IconButton({ vm.refresh() }) { Icon(Icons.Default.Refresh, "Actualiser", tint = Pal.Muted) }
             IconButton(onOpenSettings) { Icon(Icons.Default.Settings, "Réglages", tint = Pal.Muted) }
@@ -101,33 +98,29 @@ fun ChannelPanel(
         if (searching) {
             OutlinedTextField(
                 query, { query = it }, singleLine = true, placeholder = { Text("Rechercher une chaîne") },
-                shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                shape = RectangleShape, modifier = Modifier.fillMaxWidth().padding(8.dp),
             )
         }
-        LazyRow(
-            contentPadding = PaddingValues(vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        LazyRow(Modifier.fillMaxWidth().background(Color(0x0FFFFFFF))) {
             items(vm.categories) { b ->
                 val sel = b.ref == vm.selected?.ref
-                Box(
-                    Modifier.clip(RoundedCornerShape(50))
-                        .background(if (sel) Pal.AccentBrush else Brush.horizontalGradient(listOf(Pal.Surface, Pal.Surface)))
-                        .clickable { vm.selectBouquet(b) }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    Text(b.name, maxLines = 1, color = if (sel) Color.White else Pal.Muted,
-                        fontSize = 13.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium)
+                Column(Modifier.clickable { vm.selectBouquet(b) }) {
+                    Text(b.name, maxLines = 1, color = if (sel) Color.White else Pal.Muted, fontSize = 14.sp,
+                        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp))
+                    Box(Modifier.fillMaxWidth().height(3.dp).background(if (sel) Pal.Accent else Color.Transparent))
                 }
             }
         }
-        vm.error?.let { Text("Erreur : $it", color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
-        if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        vm.error?.let { Text("Erreur : $it", color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(8.dp)) }
+        if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Pal.Accent)
 
-        LazyColumn(Modifier.weight(1f), state = state, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        LazyColumn(Modifier.weight(1f), state = state) {
             items(list, key = { it.ref + it.number }) { ch -> ChannelRow(vm, ch, nowSec) }
         }
-        ColorKeys(onRed, onGreen, onYellow, onBlue, Modifier.padding(top = 8.dp))
+        Box(Modifier.fillMaxWidth().background(Pal.PanelDark).padding(horizontal = 16.dp, vertical = 10.dp)) {
+            ColorKeys(onRed, onGreen, onYellow, onBlue)
+        }
     }
 }
 
@@ -138,45 +131,40 @@ private fun ChannelRow(vm: MainViewModel, ch: Channel, nowSec: Long) {
     val playing = ch.ref == vm.current?.ref
     val fav = vm.isFavorite(ch)
     LaunchedEffect(ch.key, vm.selected?.ref) { vm.ensureEpg(ch) }
-    Row(
+    Column(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (playing) Pal.SurfaceHi else Color(0xAA141B2D))
-            .then(if (playing) Modifier.border(BorderStroke(1.5.dp, Pal.Accent), RoundedCornerShape(14.dp)) else Modifier)
-            .clickable { if (playing) vm.showList = false else vm.play(ch) }
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(if (playing) Pal.Accent else Color.Transparent)
+            .clickable { if (playing) vm.showList = false else vm.play(ch) },
     ) {
-        Text("${ch.number}", color = if (playing) Pal.Accent else Pal.Muted, fontSize = 13.sp, modifier = Modifier.width(32.dp))
-        Picon(vm.api, ch, Modifier.size(width = 72.dp, height = 46.dp))
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(ch.name, color = Pal.Text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (playing) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(Modifier.clip(RoundedCornerShape(6.dp)).background(KeyRed).padding(horizontal = 6.dp, vertical = 1.dp)) {
-                        Text("EN DIRECT", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${ch.number}", color = Color.White, fontSize = 18.sp, modifier = Modifier.width(38.dp))
+            Picon(vm.api, ch, Modifier.size(width = 66.dp, height = 42.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(ch.name, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (now != null) Text("${fmtTime(now.begin)} – ${fmtTime(now.end)}", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
+                }
+                if (now != null) {
+                    Text(now.title, color = Color.White.copy(alpha = if (playing) 1f else .85f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { now.progress(nowSec) },
+                        modifier = Modifier.fillMaxWidth().height(3.dp),
+                        color = if (playing) Color.White else Pal.Accent, trackColor = Color(0x33FFFFFF),
+                    )
+                    if (next != null) Text("${fmtTime(next.begin)}  ${next.title}", color = if (playing) Color(0xFFD6ECF8) else Pal.Muted,
+                        fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                } else {
+                    Text("Pas d'EPG", color = if (playing) Color(0xFFD6ECF8) else Pal.Muted, fontSize = 13.sp)
                 }
             }
-            if (now != null) {
-                Text("${fmtTime(now.begin)}  ${now.title}", color = Pal.Text.copy(alpha = .85f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(3.dp))
-                LinearProgressIndicator(
-                    progress = { now.progress(nowSec) },
-                    modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-                    color = Pal.Accent, trackColor = Pal.SurfaceHi,
-                )
-                if (next != null) Text("${fmtTime(next.begin)}  ${next.title}", color = Pal.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            } else {
-                Text("Pas d'EPG", color = Pal.Muted, fontSize = 12.sp)
+            IconButton({ vm.toggleFavorite(ch) }) {
+                Icon(if (fav) Icons.Filled.Star else Icons.Outlined.StarBorder, "Favori", tint = if (fav) KeyYellow else Color(0x66FFFFFF))
             }
         }
-        IconButton({ vm.toggleFavorite(ch) }) {
-            Icon(if (fav) Icons.Filled.Star else Icons.Outlined.StarBorder, "Favori", tint = if (fav) KeyYellow else Pal.Muted)
-        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Pal.Divider))
     }
 }
 
@@ -191,16 +179,16 @@ fun SidePanel(panel: Panel, c: PlayerController, subs: SubtitleEngine, eventBegi
         Panel.Audio -> "Audio"; Panel.Subs -> "Sous-titres"; Panel.Image -> "Image"; else -> "Qualité"
     }
     Column(
-        Modifier.fillMaxHeight().width(380.dp).background(Pal.Glass)
+        Modifier.fillMaxHeight().width(400.dp).background(Pal.PanelDark)
             .statusBarsPadding().navigationBarsPadding()
             .pointerInput(Unit) { detectTapGestures { } }
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(width = 6.dp, height = 28.dp).clip(RoundedCornerShape(3.dp)).background(accent))
+            Box(Modifier.size(width = 8.dp, height = 30.dp).background(accent))
             Spacer(Modifier.width(12.dp))
-            Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Light, modifier = Modifier.weight(1f))
             IconButton(onClose) { Icon(Icons.Default.Close, "Fermer", tint = Color.White) }
         }
         when (panel) {
@@ -216,6 +204,14 @@ fun SidePanel(panel: Panel, c: PlayerController, subs: SubtitleEngine, eventBegi
 @Composable
 private fun AudioPanel(c: PlayerController) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { c.addExternalAudioFile(it) } }
+    SectionTitle("Langue audio préférée (toutes les chaînes)")
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("" to "Original", "ar" to "العربية", "en" to "English", "fr" to "Français", "de" to "Deutsch", "es" to "Español", "tr" to "Türkçe").forEach { (code, name) ->
+            FilterChip(selected = c.audioLang == code, onClick = { c.changeAudioLang(code) }, shape = RectangleShape, label = { Text(name, fontSize = 13.sp) })
+        }
+    }
+    Hint("Sur chaque chaîne, cette langue est choisie automatiquement si elle existe. Sinon la piste d'origine reste active.")
+    SectionTitle("Pistes de la chaîne")
     TrackList(c.audioTracks, c.selectedAudio, "Aucune piste audio") { c.selectAudio(it) }
 
     SectionTitle("Sources audio IP")
@@ -315,36 +311,6 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
         }
     }
 
-    // --- Traduction en direct ---
-    SectionTitle("Traduction en direct")
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("Sous-titres de la chaîne (DVB / télétexte)", color = Color.White, fontSize = 14.sp)
-            Text("Lit l'image, traduit et affiche à la place", color = Pal.Muted, fontSize = 12.sp)
-        }
-        Switch(checked = subs.ocrOn, onCheckedChange = { subs.setOcr(it) })
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("Fichier SRT chargé", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Switch(checked = subs.transOn, onCheckedChange = { subs.configureTranslation(it) })
-    }
-    if (subs.ocrOn) {
-        Hint("Choisis d'abord la piste de sous-titres de la chaîne dans la liste « Sous-titres de la chaîne » plus bas. La langue d'origine doit utiliser l'alphabet latin (allemand, anglais, français, espagnol, italien, turc…). Délai d'environ 1 seconde.")
-    }
-    if (subs.transOn || subs.ocrOn) {
-        Text("Langue du fichier", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-        LangRow(subs.transSource) { subs.configureTranslation(true, src = it) }
-        Text("Traduire vers", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-        LangRow(subs.transTarget) { subs.configureTranslation(true, tgt = it) }
-        Text("Affichage", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-        ChipRow(TransMode.values().toList(), subs.transMode, { it.label }) { subs.transMode = it }
-        if (subs.transStatus.isNotBlank()) {
-            Text(subs.transStatus, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
-                color = if (subs.transStatus.startsWith("Erreur") || subs.transStatus.startsWith("Choisis")) MaterialTheme.colorScheme.error else KeyGreen)
-        }
-    }
-    Hint("Traduction sur l'appareil (ML Kit) : le modèle se télécharge une fois par langue.")
-
     // --- Apparence ---
     SectionTitle("Apparence (style OSN)")
     ChipRow(SubStyle.values().toList(), subs.style, { it.label }) { subs.style = it; subs.saveStyle() }
@@ -385,22 +351,6 @@ private fun OffsetRow(subs: SubtitleEngine, a: Long, b: Long, c: Long) {
     }
 }
 
-private val LANGS = listOf(
-    TranslateLanguage.ARABIC to "العربية", TranslateLanguage.ENGLISH to "English", TranslateLanguage.FRENCH to "Français",
-    TranslateLanguage.GERMAN to "Deutsch", TranslateLanguage.SPANISH to "Español", TranslateLanguage.ITALIAN to "Italiano",
-    TranslateLanguage.TURKISH to "Türkçe", TranslateLanguage.PORTUGUESE to "Português", TranslateLanguage.DUTCH to "Nederlands",
-    TranslateLanguage.RUSSIAN to "Русский", TranslateLanguage.PERSIAN to "فارسی", TranslateLanguage.URDU to "اردو",
-)
-
-@Composable
-private fun LangRow(selected: String, onPick: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        LANGS.forEach { (code, name) ->
-            FilterChip(selected = code == selected, onClick = { onPick(code) }, label = { Text(name, fontSize = 13.sp) })
-        }
-    }
-}
-
 @Composable
 private fun ImageControls(c: PlayerController) {
     val s = c.image
@@ -417,7 +367,7 @@ private fun QualityPanel(c: PlayerController) {
 
     SectionTitle("Netteté VLC (recommandée)")
     LabeledSlider("Netteté", c.vlcSharpen, 0f..2f, onFinished = { c.changeVlcSharpen(c.vlcSharpen) }) { c.previewVlcSharpen(it) }
-    Hint("Filtre logiciel de VLC : relâche le curseur pour appliquer (la chaîne se relance). Plus gourmand en processeur.")
+    Hint("Mémorisé pour toutes les chaînes. Relâche le curseur pour appliquer (la chaîne se relance).")
 
     SectionTitle("Netteté GPU (Android 13+)")
     if (c.sharpnessSupported) {
@@ -507,7 +457,7 @@ private fun LabeledSlider(
 private fun <T> ChipRow(items: List<T>, selected: T, label: (T) -> String, onPick: (T) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEach { it ->
-            FilterChip(selected = it == selected, onClick = { onPick(it) }, label = { Text(label(it), fontSize = 13.sp) })
+            FilterChip(selected = it == selected, onClick = { onPick(it) }, shape = RectangleShape, label = { Text(label(it), fontSize = 13.sp) })
         }
     }
 }

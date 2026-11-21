@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -67,7 +68,6 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
         w.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)   // l'écran ne s'éteint plus pendant la lecture
         onDispose {
             w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            subs.release()
             ic.show(WindowInsetsCompat.Type.systemBars())
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             vm.prefs.saveImage(controller.image)
@@ -78,14 +78,6 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
     val ch = vm.current
     LaunchedEffect(ch?.ref, vm.api) { ch?.let { controller.play(vm.api.streamUrl(it)) } }
     LaunchedEffect(ch?.ref) { subs.clear() }
-    // Reconnaissance du texte des sous-titres de la chaîne (2 fois par seconde environ)
-    LaunchedEffect(subs.ocrOn) {
-        while (subs.ocrOn) {
-            controller.grabSubtitleRegion()?.let { subs.processFrame(it.bmp, it.cropTop, it.scale, it.offX, it.offY) }
-            delay(450)
-        }
-    }
-
     var panel by remember { mutableStateOf(Panel.None) }
     var showBar by remember { mutableStateOf(false) }
     var barTick by remember { mutableIntStateOf(0) }
@@ -177,8 +169,6 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
 
         // Sous-titres SRT (style OSN)
         SubtitleOverlay(subs)
-        // Traduction des sous-titres de la chaîne (DVB / télétexte)
-        OcrTranslationOverlay(subs)
 
         // Infobar moderne (liste fermée)
         AnimatedVisibility(
@@ -231,85 +221,74 @@ private fun InfoBar(
     val poster = now?.title?.let { vm.posters[it] }
     LaunchedEffect(now?.title) { now?.title?.let { vm.ensurePoster(it) } }
 
-    Column(
-        Modifier.fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC060A14), Color(0xF5060A14))))
-            .navigationBarsPadding()
-            .padding(horizontal = 28.dp, vertical = 16.dp)
-            .padding(top = 48.dp),
-    ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            // Poster du programme (TMDB) ou grand picon
+    Column(Modifier.fillMaxWidth().background(Pal.Panel).navigationBarsPadding()) {
+        Row(Modifier.padding(start = 30.dp, end = 30.dp, top = 20.dp, bottom = 14.dp), verticalAlignment = Alignment.Top) {
+            // Affiche du programme ou grand picon
             if (poster != null) {
                 AsyncImage(
                     model = poster, contentDescription = now?.title,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(width = 112.dp, height = 168.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(14.dp)),
+                    modifier = Modifier.size(width = 112.dp, height = 168.dp).border(1.dp, Color(0x4DFFFFFF)),
                 )
             } else {
                 Picon(vm.api, ch, Modifier.size(width = 136.dp, height = 86.dp))
             }
-            Spacer(Modifier.width(22.dp))
+            Spacer(Modifier.width(24.dp))
             Column(Modifier.weight(1f)) {
-                // Ligne chaîne : numéro, picon, nom ........ heure
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(8.dp)).background(Pal.AccentBrush)
-                            .padding(horizontal = 10.dp, vertical = 3.dp),
-                    ) { Text("${ch.number}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
-                    Spacer(Modifier.width(10.dp))
-                    if (poster != null) {
-                        Picon(vm.api, ch, Modifier.size(width = 52.dp, height = 32.dp))
-                        Spacer(Modifier.width(10.dp))
+                    Box(Modifier.background(Pal.Accent).padding(horizontal = 12.dp, vertical = 2.dp)) {
+                        Text("${ch.number}", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
                     }
-                    Text(ch.name, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                    Spacer(Modifier.width(14.dp))
+                    if (poster != null) {
+                        Picon(vm.api, ch, Modifier.size(width = 56.dp, height = 36.dp))
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Text(ch.name, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Text(fmtTime(nowSec), color = Pal.Accent, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text(fmtTime(nowSec), color = Color.White, fontWeight = FontWeight.Light, fontSize = 30.sp)
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 if (now != null) {
-                    Text(now.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold,
+                    Text(now.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Light,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(fmtTime(now.begin), color = Color(0xCCFFFFFF), fontSize = 13.sp)
+                        Text(fmtTime(now.begin), color = Color.White, fontSize = 14.sp)
                         LinearProgressIndicator(
                             progress = { now.progress(nowSec) },
-                            modifier = Modifier.weight(1f).padding(horizontal = 12.dp).height(5.dp).clip(RoundedCornerShape(3.dp)),
+                            modifier = Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp),
                             color = Pal.Accent, trackColor = Color(0x33FFFFFF),
                         )
-                        Text("${fmtTime(now.end)}   •   ${now.remainingMin(nowSec)} min restantes", color = Color(0xCCFFFFFF), fontSize = 13.sp)
+                        Text("${fmtTime(now.end)}   +${now.remainingMin(nowSec)} min", color = Color.White, fontSize = 14.sp)
                     }
                     if (now.description.isNotBlank()) {
-                        Text(now.description, color = Color(0xB3FFFFFF), fontSize = 14.sp, maxLines = 3,
+                        Text(now.description, color = Color(0xFFC8D2DA), fontSize = 14.sp, maxLines = 3,
                             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
                     }
                 } else {
                     Text("Pas d'informations EPG", color = Pal.Muted, fontSize = 18.sp)
                 }
                 if (next != null) {
-                    Row(
-                        Modifier.padding(top = 10.dp).clip(RoundedCornerShape(10.dp))
-                            .background(Color(0x26FFFFFF)).padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("ENSUITE", color = Pal.Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(10.dp))
-                        Text("${fmtTime(next.begin)}   ${next.title}", color = Color.White, fontSize = 13.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(fmtTime(next.begin), color = Pal.Accent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(12.dp))
+                        Text(next.title, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
         }
-        Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.clip(RoundedCornerShape(50)).background(Color(0x33FFFFFF))
-                    .clickable(onClick = onList).padding(horizontal = 18.dp, vertical = 9.dp),
-            ) { Text("☰  Chaînes", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-            Spacer(Modifier.width(12.dp))
+        Row(
+            Modifier.fillMaxWidth().background(Pal.PanelDark).padding(horizontal = 30.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.clickable(onClick = onList).padding(vertical = 4.dp)) {
+                Text("☰  Chaînes", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.width(26.dp))
             ColorKeys(onRed, onGreen, onYellow, onBlue)
+            Spacer(Modifier.weight(1f))
+            if (vm.posterError != null) Text(vm.posterError ?: "", color = Pal.Muted, fontSize = 12.sp)
         }
     }
 }

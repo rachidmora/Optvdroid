@@ -1,7 +1,6 @@
 package com.atvplayer
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
@@ -84,14 +83,16 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     var image by mutableStateOf(prefs.loadImage()); private set
     var buffering by mutableStateOf(true); private set
     var error by mutableStateOf(false); private set
-    var aspect by mutableStateOf(Aspect.Fit); private set
-    var deint by mutableStateOf(Deint.Auto); private set
-    var hardware by mutableStateOf(true); private set
+    var aspect by mutableStateOf(Aspect.values().getOrElse(prefs.aspect) { Aspect.Fit }); private set
+    var deint by mutableStateOf(Deint.values().getOrElse(prefs.deint) { Deint.Auto }); private set
+    var hardware by mutableStateOf(prefs.hardware); private set
     var message by mutableStateOf<String?>(null); private set
     /** URL en cours sans identifiants, pour l'affichage d'erreur. */
     val currentUrl: String get() = (lastUrl ?: "").replace(Regex("//[^/@]*@"), "//")
     var lastEvent by mutableStateOf(""); private set
-    var vlcSharpen by mutableStateOf(0f); private set
+    var vlcSharpen by mutableStateOf(prefs.vlcSharpen); private set
+    var audioLang by mutableStateOf(prefs.audioLang); private set
+    private var audioLangDone = false
     var autoSubs by mutableStateOf(prefs.autoSubs); private set
     var audioSources by mutableStateOf(prefs.loadAudioSources()); private set
     var activeAudio by mutableStateOf<AudioSource?>(null); private set
@@ -164,7 +165,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         lastUrl = url
         error = false; buffering = true
         audioTracks = emptyList(); subTracks = emptyList()
-        autoSubDone = false
+        autoSubDone = false; audioLangDone = false
         val caching = 1500 + if (activeAudio != null) videoDelayMs else 0
         val media = Media(libVlc, Uri.parse(url)).apply {
             addOption(if (hardware) ":avcodec-hw=any" else ":avcodec-hw=none")
@@ -186,7 +187,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         media.release()
         mp.play()
         mp.setVolume(if (activeAudio != null) 0 else 100)
-        main.postDelayed({ applyImage() }, 600)
+        main.postDelayed({ applyImage(); changeAspect(aspect) }, 600)
     }
 
     private fun replay() { lastUrl?.let { startMain(it) } }
@@ -196,6 +197,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         subTracks = mp.spuTracks?.map { TrackItem(it.id, it.name) }.orEmpty()
         selectedAudio = mp.audioTrack
         selectedSub = mp.spuTrack
+        pickPreferredAudio()
         // Sous-titres automatiques de la chaîne (DVB / télétexte) : on active la 1re piste dispo
         if (autoSubs && !autoSubDone) {
             val first = subTracks.firstOrNull { it.id >= 0 }
@@ -206,6 +208,30 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
                 }, 2500)
             }
         }
+    }
+
+    private val langPatterns = mapOf(
+        "ar" to "arabic|arabe|ara|عرب",
+        "en" to "english|anglais|eng",
+        "fr" to "french|francais|français|fra|fre",
+        "de" to "german|deutsch|allemand|deu|ger",
+        "es" to "spanish|espagnol|spa|esp",
+        "tr" to "turkish|turc|tur",
+    )
+
+    /** Choisit automatiquement la langue audio préférée si la chaîne la propose. */
+    private fun pickPreferredAudio() {
+        if (audioLangDone || audioLang.isBlank() || activeAudio != null || audioTracks.size < 2) return
+        val pat = langPatterns[audioLang] ?: return
+        val re = Regex("(?<![a-zà-ÿ])($pat)(?![a-zà-ÿ])", RegexOption.IGNORE_CASE)
+        val t = audioTracks.firstOrNull { it.id >= 0 && re.containsMatchIn(it.name) } ?: return
+        audioLangDone = true
+        if (t.id != selectedAudio) { try { mp.setAudioTrack(t.id); selectedAudio = t.id } catch (_: Exception) {} }
+    }
+
+    fun changeAudioLang(code: String) {
+        audioLang = code; prefs.audioLang = code
+        audioLangDone = false; pickPreferredAudio()
     }
 
     fun changeAutoSubs(on: Boolean) {
@@ -333,7 +359,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
 
     // ---------- Qualité ----------
     fun changeAspect(a: Aspect) {
-        aspect = a
+        aspect = a; prefs.aspect = a.ordinal
         when (a) {
             Aspect.Fit -> { mp.setAspectRatio(null); mp.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT }
             Aspect.Fill -> { mp.setAspectRatio(null); mp.videoScale = MediaPlayer.ScaleType.SURFACE_FILL }
@@ -342,13 +368,13 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         }
     }
 
-    fun changeVlcSharpen(v: Float) { vlcSharpen = v; replay() }
+    fun changeVlcSharpen(v: Float) { vlcSharpen = v; prefs.vlcSharpen = v; replay() }
     fun previewVlcSharpen(v: Float) { vlcSharpen = v }
-    fun changeDeint(d: Deint) { deint = d; replay() }
-    fun changeHardware(h: Boolean) { hardware = h; replay() }
+    fun changeDeint(d: Deint) { deint = d; prefs.deint = d.ordinal; replay() }
+    fun changeHardware(h: Boolean) { hardware = h; prefs.hardware = h; replay() }
 
     // ---------- Réglages d'image ----------
-    fun updateImage(s: ImageSettings) { image = s; applyImage() }
+    fun updateImage(s: ImageSettings) { image = s; prefs.saveImage(s); applyImage() }
 
     private fun findTexture(v: View): TextureView? {
         if (v is TextureView) return v
@@ -399,22 +425,6 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
             )
         )
         tv.setLayerType(View.LAYER_TYPE_HARDWARE, Paint().apply { colorFilter = ColorMatrixColorFilter(sat) })
-    }
-
-    class Grab(val bmp: Bitmap, val cropTop: Int, val scale: Float, val offX: Float, val offY: Float)
-
-    /** Capture le bas de la vidéo (sous-titres DVB/télétexte incrustés par VLC) pour la reconnaissance de texte. */
-    fun grabSubtitleRegion(): Grab? {
-        val tv = texture ?: layout?.let { findTexture(it) }?.also { texture = it } ?: return null
-        if (!tv.isAvailable || tv.width < 100 || tv.height < 100) return null
-        val rw = minOf(tv.width, 1280)
-        val rh = (tv.height * rw.toFloat() / tv.width).toInt().coerceAtLeast(2)
-        val full = tv.getBitmap(rw, rh) ?: return null
-        val cropTop = (rh * 0.5f).toInt()
-        val crop = Bitmap.createBitmap(full, 0, cropTop, rw, rh - cropTop)
-        full.recycle()
-        val loc = IntArray(2); tv.getLocationInWindow(loc)
-        return Grab(crop, cropTop, tv.width.toFloat() / rw, loc[0].toFloat(), loc[1].toFloat())
     }
 
     fun release() {

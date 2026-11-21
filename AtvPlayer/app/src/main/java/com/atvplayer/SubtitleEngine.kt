@@ -1,24 +1,13 @@
 package com.atvplayer
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.RectF
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateMapOf
 import com.atvplayer.data.Prefs
-import com.google.mlkit.nl.translate.TranslateLanguage
-import com.google.mlkit.nl.translate.Translation
-import com.google.mlkit.nl.translate.Translator
-import com.google.mlkit.nl.translate.TranslatorOptions
-import com.google.mlkit.common.model.DownloadConditions
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.nio.ByteBuffer
@@ -27,8 +16,6 @@ import java.nio.charset.Charset
 import kotlin.concurrent.thread
 
 data class Cue(val start: Long, val end: Long, val text: String, val idx: Int = 0)
-
-enum class TransMode(val label: String) { Translated("Traduction"), Both("Les deux"), Original("Original") }
 
 enum class SubStyle(val label: String) { Osn("OSN"), Box("Boîte"), Plain("Simple") }
 enum class Enc(val label: String) { Auto("Auto"), Utf8("UTF-8"), Arabic("Arabe 1256"), Latin("Latin 1252") }
@@ -63,106 +50,6 @@ class SubtitleEngine(private val appCtx: Context, private val prefs: Prefs) {
     }
 
     val loaded get() = cues.isNotEmpty()
-
-    // ---------- Traduction en direct (ML Kit, hors ligne après téléchargement du modèle) ----------
-    var transOn by mutableStateOf(false); private set
-    var transSource by mutableStateOf(TranslateLanguage.ENGLISH); private set
-    var transTarget by mutableStateOf(TranslateLanguage.ARABIC); private set
-    var transMode by mutableStateOf(TransMode.Both)
-    var transStatus by mutableStateOf(""); private set
-    private var translator: Translator? = null
-    private var transReady = false
-    private val cache = mutableStateMapOf<Int, String>()
-    private val pending = HashSet<Int>()
-
-    fun configureTranslation(on: Boolean, src: String = transSource, tgt: String = transTarget) {
-        transOn = on; transSource = src; transTarget = tgt
-        rebuildTranslator()
-    }
-
-    /** Le traducteur sert à la fois aux fichiers SRT et à la traduction des sous-titres de la chaîne (OCR). */
-    private fun rebuildTranslator() {
-        cache.clear(); pending.clear(); transReady = false
-        translator?.close(); translator = null
-        if (!transOn && !ocrOn) { transStatus = ""; return }
-        if (transSource == transTarget) { transStatus = "Choisis deux langues différentes"; return }
-        val t = Translation.getClient(
-            TranslatorOptions.Builder().setSourceLanguage(transSource).setTargetLanguage(transTarget).build()
-        )
-        translator = t
-        transStatus = "Téléchargement du modèle de traduction…"
-        t.downloadModelIfNeeded(DownloadConditions.Builder().build())
-            .addOnSuccessListener { transReady = true; transStatus = "Traduction prête" }
-            .addOnFailureListener { transStatus = "Erreur : ${it.message}" }
-    }
-
-    // ---------- Traduction des sous-titres de la chaîne (DVB / télétexte) par reconnaissance d'image ----------
-    var ocrOn by mutableStateOf(false); private set
-    var ocrOriginal by mutableStateOf<String?>(null); private set
-    var ocrTranslated by mutableStateOf<String?>(null); private set
-    /** Rectangle du sous-titre d'origine, en pixels fenêtre. */
-    var ocrRect by mutableStateOf<RectF?>(null); private set
-    private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
-    private var ocrBusy = false
-    private var emptyCount = 0
-    private var lastOcrText = ""
-
-    fun setOcr(on: Boolean) { ocrOn = on; ocrReset(); rebuildTranslator() }
-
-    private fun ocrReset() { ocrOriginal = null; ocrTranslated = null; ocrRect = null; lastOcrText = ""; emptyCount = 0 }
-
-    /** Analyse une capture du bas de l'image : texte reconnu -> traduction. */
-    fun processFrame(bmp: Bitmap, cropTop: Int, scale: Float, offX: Float, offY: Float) {
-        if (ocrBusy) { bmp.recycle(); return }
-        ocrBusy = true
-        recognizer.process(InputImage.fromBitmap(bmp, 0))
-            .addOnSuccessListener { vt ->
-                ocrBusy = false
-                val lines = vt.textBlocks.flatMap { it.lines }.filter { it.text.trim().length >= 2 }
-                if (lines.isEmpty()) {
-                    emptyCount++
-                    if (emptyCount >= 2) ocrReset()
-                    return@addOnSuccessListener
-                }
-                emptyCount = 0
-                val text = lines.joinToString(" ") { it.text.trim() }.replace(Regex("\\s+"), " ")
-                var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = 0f; var b = 0f
-                lines.forEach { ln -> ln.boundingBox?.let { bb ->
-                    l = minOf(l, bb.left.toFloat()); t = minOf(t, bb.top.toFloat())
-                    r = maxOf(r, bb.right.toFloat()); b = maxOf(b, bb.bottom.toFloat())
-                } }
-                if (l < r) ocrRect = RectF(offX + l * scale, offY + (t + cropTop) * scale, offX + r * scale, offY + (b + cropTop) * scale)
-                if (text != lastOcrText) {
-                    lastOcrText = text; ocrOriginal = text; ocrTranslated = null
-                    translator?.takeIf { transReady }?.translate(text)?.addOnSuccessListener { out ->
-                        if (lastOcrText == text) ocrTranslated = out
-                    }
-                }
-            }
-            .addOnFailureListener { ocrBusy = false }
-            .addOnCompleteListener { bmp.recycle() }
-    }
-
-    private fun request(idx: Int) {
-        val t = translator ?: return
-        if (!transReady || idx !in cues.indices || !pending.add(idx)) return
-        t.translate(cues[idx].text)
-            .addOnSuccessListener { cache[idx] = it }
-            .addOnFailureListener { pending.remove(idx) }
-    }
-
-    /** Traduction de la réplique si prête (sinon la demande est lancée). */
-    fun translated(c: Cue): String? {
-        if (!transOn) return null
-        cache[c.idx]?.let { return it }
-        request(c.idx)
-        return null
-    }
-
-    /** Pré-traduit les répliques à venir pour qu'elles soient prêtes à l'affichage. */
-    fun prefetch(from: Int) { for (i in from..from + 6) request(i) }
-
-    fun release() { try { translator?.close(); recognizer.close() } catch (_: Exception) {} }
 
     // ---------- Chargement ----------
     fun loadUrl(url: String, eventBeginSec: Long?) {
@@ -205,7 +92,6 @@ class SubtitleEngine(private val appCtx: Context, private val prefs: Prefs) {
         val b = raw ?: return
         val list = SrtParser.parse(SrtParser.decode(b, enc))
         cues = list
-        cache.clear(); pending.clear()
         status = if (list.isEmpty()) "Aucune réplique trouvée (essaie un autre encodage)" else "${list.size} répliques chargées"
     }
 
