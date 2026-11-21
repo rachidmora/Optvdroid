@@ -78,6 +78,13 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
     val ch = vm.current
     LaunchedEffect(ch?.ref, vm.api) { ch?.let { controller.play(vm.api.streamUrl(it)) } }
     LaunchedEffect(ch?.ref) { subs.clear() }
+    // Reconnaissance du texte des sous-titres de la chaîne (2 fois par seconde environ)
+    LaunchedEffect(subs.ocrOn) {
+        while (subs.ocrOn) {
+            controller.grabSubtitleRegion()?.let { subs.processFrame(it.bmp, it.cropTop, it.scale, it.offX, it.offY) }
+            delay(450)
+        }
+    }
 
     var panel by remember { mutableStateOf(Panel.None) }
     var showBar by remember { mutableStateOf(false) }
@@ -170,6 +177,8 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
 
         // Sous-titres SRT (style OSN)
         SubtitleOverlay(subs)
+        // Traduction des sous-titres de la chaîne (DVB / télétexte)
+        OcrTranslationOverlay(subs)
 
         // Infobar moderne (liste fermée)
         AnimatedVisibility(

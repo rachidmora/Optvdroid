@@ -15,6 +15,12 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -76,7 +82,7 @@ fun BoxScope.SubtitleOverlay(e: SubtitleEngine) {
 }
 
 @Composable
-private fun StyledSub(t: String, style: SubStyle, size: Float, font: FontFamily, fill: Color, alpha: Float) {
+fun StyledSub(t: String, style: SubStyle, size: Float, font: FontFamily, fill: Color, alpha: Float) {
     val base = TextStyle(
         fontFamily = font, fontWeight = FontWeight.Bold, fontSize = size.sp,
         lineHeight = (size * 1.35f).sp, textAlign = TextAlign.Center,
@@ -92,6 +98,58 @@ private fun StyledSub(t: String, style: SubStyle, size: Float, font: FontFamily,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xB3000000)).padding(horizontal = 16.dp, vertical = 6.dp),
             )
             SubStyle.Plain -> Text(t, style = base.copy(color = fill.copy(alpha = alpha), shadow = Shadow(Color.Black, Offset(2f, 2f), 4f)))
+        }
+    }
+}
+
+/** Traduction des sous-titres de la chaîne (reconnus à l'image) : remplace ou complète l'original. */
+@Composable
+fun OcrTranslationOverlay(e: SubtitleEngine) {
+    if (!e.ocrOn) return
+    val rect = e.ocrRect
+    val tr = e.ocrTranslated
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    val density = LocalDensity.current
+    val font = rememberSubFont()
+    val fill = if (e.yellow) Color(0xFFFFEB3B) else Color.White
+    Box(
+        Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInWindow(); size = it.size },
+    ) {
+        if (rect != null && tr != null && e.transMode != TransMode.Original && size.height > 0) {
+            val pad = with(density) { 8.dp.toPx() }
+            val left = rect.left - origin.x
+            val top = rect.top - origin.y
+            val bottom = rect.bottom - origin.y
+            if (e.transMode == TransMode.Translated) {
+                // 1) masque l'original  2) affiche la traduction au même endroit
+                Box(
+                    Modifier.offset { IntOffset((left - pad * 2).roundToInt(), (top - pad).roundToInt()) }
+                        .size(
+                            width = with(density) { (rect.width() + pad * 4).toDp() },
+                            height = with(density) { (rect.height() + pad * 2).toDp() },
+                        )
+                        .clip(RoundedCornerShape(8.dp)).background(Color(0xFF0B0B0B)),
+                )
+                Box(
+                    Modifier.fillMaxSize().padding(top = with(density) { (top - pad).coerceAtLeast(0f).toDp() }),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Box(Modifier.fillMaxWidth(0.82f), contentAlignment = Alignment.TopCenter) {
+                        StyledSub(tr, SubStyle.Osn, e.textSize, font, fill, 1f)
+                    }
+                }
+            } else {
+                // Les deux : traduction juste au-dessus de l'original
+                Box(
+                    Modifier.fillMaxSize().padding(bottom = with(density) { (size.height - (top - pad)).coerceAtLeast(0f).toDp() }),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Box(Modifier.fillMaxWidth(0.82f), contentAlignment = Alignment.BottomCenter) {
+                        StyledSub(tr, e.style, e.textSize * 0.9f, font, fill, 1f)
+                    }
+                }
+            }
         }
     }
 }

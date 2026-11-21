@@ -1,6 +1,7 @@
 package com.atvplayer
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
@@ -398,6 +399,22 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
             )
         )
         tv.setLayerType(View.LAYER_TYPE_HARDWARE, Paint().apply { colorFilter = ColorMatrixColorFilter(sat) })
+    }
+
+    class Grab(val bmp: Bitmap, val cropTop: Int, val scale: Float, val offX: Float, val offY: Float)
+
+    /** Capture le bas de la vidéo (sous-titres DVB/télétexte incrustés par VLC) pour la reconnaissance de texte. */
+    fun grabSubtitleRegion(): Grab? {
+        val tv = texture ?: layout?.let { findTexture(it) }?.also { texture = it } ?: return null
+        if (!tv.isAvailable || tv.width < 100 || tv.height < 100) return null
+        val rw = minOf(tv.width, 1280)
+        val rh = (tv.height * rw.toFloat() / tv.width).toInt().coerceAtLeast(2)
+        val full = tv.getBitmap(rw, rh) ?: return null
+        val cropTop = (rh * 0.5f).toInt()
+        val crop = Bitmap.createBitmap(full, 0, cropTop, rw, rh - cropTop)
+        full.recycle()
+        val loc = IntArray(2); tv.getLocationInWindow(loc)
+        return Grab(crop, cropTop, tv.width.toFloat() / rw, loc[0].toFloat(), loc[1].toFloat())
     }
 
     fun release() {

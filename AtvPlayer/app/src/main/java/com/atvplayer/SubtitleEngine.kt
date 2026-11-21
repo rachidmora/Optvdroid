@@ -1,6 +1,11 @@
 package com.atvplayer
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.RectF
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -72,18 +77,70 @@ class SubtitleEngine(private val appCtx: Context, private val prefs: Prefs) {
 
     fun configureTranslation(on: Boolean, src: String = transSource, tgt: String = transTarget) {
         transOn = on; transSource = src; transTarget = tgt
+        rebuildTranslator()
+    }
+
+    /** Le traducteur sert à la fois aux fichiers SRT et à la traduction des sous-titres de la chaîne (OCR). */
+    private fun rebuildTranslator() {
         cache.clear(); pending.clear(); transReady = false
         translator?.close(); translator = null
-        if (!on) { transStatus = ""; return }
-        if (src == tgt) { transStatus = "Choisis deux langues différentes"; return }
+        if (!transOn && !ocrOn) { transStatus = ""; return }
+        if (transSource == transTarget) { transStatus = "Choisis deux langues différentes"; return }
         val t = Translation.getClient(
-            TranslatorOptions.Builder().setSourceLanguage(src).setTargetLanguage(tgt).build()
+            TranslatorOptions.Builder().setSourceLanguage(transSource).setTargetLanguage(transTarget).build()
         )
         translator = t
         transStatus = "Téléchargement du modèle de traduction…"
         t.downloadModelIfNeeded(DownloadConditions.Builder().build())
             .addOnSuccessListener { transReady = true; transStatus = "Traduction prête" }
             .addOnFailureListener { transStatus = "Erreur : ${it.message}" }
+    }
+
+    // ---------- Traduction des sous-titres de la chaîne (DVB / télétexte) par reconnaissance d'image ----------
+    var ocrOn by mutableStateOf(false); private set
+    var ocrOriginal by mutableStateOf<String?>(null); private set
+    var ocrTranslated by mutableStateOf<String?>(null); private set
+    /** Rectangle du sous-titre d'origine, en pixels fenêtre. */
+    var ocrRect by mutableStateOf<RectF?>(null); private set
+    private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private var ocrBusy = false
+    private var emptyCount = 0
+    private var lastOcrText = ""
+
+    fun setOcr(on: Boolean) { ocrOn = on; ocrReset(); rebuildTranslator() }
+
+    private fun ocrReset() { ocrOriginal = null; ocrTranslated = null; ocrRect = null; lastOcrText = ""; emptyCount = 0 }
+
+    /** Analyse une capture du bas de l'image : texte reconnu -> traduction. */
+    fun processFrame(bmp: Bitmap, cropTop: Int, scale: Float, offX: Float, offY: Float) {
+        if (ocrBusy) { bmp.recycle(); return }
+        ocrBusy = true
+        recognizer.process(InputImage.fromBitmap(bmp, 0))
+            .addOnSuccessListener { vt ->
+                ocrBusy = false
+                val lines = vt.textBlocks.flatMap { it.lines }.filter { it.text.trim().length >= 2 }
+                if (lines.isEmpty()) {
+                    emptyCount++
+                    if (emptyCount >= 2) ocrReset()
+                    return@addOnSuccessListener
+                }
+                emptyCount = 0
+                val text = lines.joinToString(" ") { it.text.trim() }.replace(Regex("\\s+"), " ")
+                var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = 0f; var b = 0f
+                lines.forEach { ln -> ln.boundingBox?.let { bb ->
+                    l = minOf(l, bb.left.toFloat()); t = minOf(t, bb.top.toFloat())
+                    r = maxOf(r, bb.right.toFloat()); b = maxOf(b, bb.bottom.toFloat())
+                } }
+                if (l < r) ocrRect = RectF(offX + l * scale, offY + (t + cropTop) * scale, offX + r * scale, offY + (b + cropTop) * scale)
+                if (text != lastOcrText) {
+                    lastOcrText = text; ocrOriginal = text; ocrTranslated = null
+                    translator?.takeIf { transReady }?.translate(text)?.addOnSuccessListener { out ->
+                        if (lastOcrText == text) ocrTranslated = out
+                    }
+                }
+            }
+            .addOnFailureListener { ocrBusy = false }
+            .addOnCompleteListener { bmp.recycle() }
     }
 
     private fun request(idx: Int) {
@@ -105,7 +162,7 @@ class SubtitleEngine(private val appCtx: Context, private val prefs: Prefs) {
     /** Pré-traduit les répliques à venir pour qu'elles soient prêtes à l'affichage. */
     fun prefetch(from: Int) { for (i in from..from + 6) request(i) }
 
-    fun release() { try { translator?.close() } catch (_: Exception) {} }
+    fun release() { try { translator?.close(); recognizer.close() } catch (_: Exception) {} }
 
     // ---------- Chargement ----------
     fun loadUrl(url: String, eventBeginSec: Long?) {

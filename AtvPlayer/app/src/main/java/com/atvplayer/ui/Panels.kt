@@ -318,10 +318,20 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
     // --- Traduction en direct ---
     SectionTitle("Traduction en direct")
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Traduire les sous-titres", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text("Sous-titres de la chaîne (DVB / télétexte)", color = Color.White, fontSize = 14.sp)
+            Text("Lit l'image, traduit et affiche à la place", color = Pal.Muted, fontSize = 12.sp)
+        }
+        Switch(checked = subs.ocrOn, onCheckedChange = { subs.setOcr(it) })
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Fichier SRT chargé", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Switch(checked = subs.transOn, onCheckedChange = { subs.configureTranslation(it) })
     }
-    if (subs.transOn) {
+    if (subs.ocrOn) {
+        Hint("Choisis d'abord la piste de sous-titres de la chaîne dans la liste « Sous-titres de la chaîne » plus bas. La langue d'origine doit utiliser l'alphabet latin (allemand, anglais, français, espagnol, italien, turc…). Délai d'environ 1 seconde.")
+    }
+    if (subs.transOn || subs.ocrOn) {
         Text("Langue du fichier", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
         LangRow(subs.transSource) { subs.configureTranslation(true, src = it) }
         Text("Traduire vers", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
@@ -333,7 +343,7 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
                 color = if (subs.transStatus.startsWith("Erreur") || subs.transStatus.startsWith("Choisis")) MaterialTheme.colorScheme.error else KeyGreen)
         }
     }
-    Hint("Traduction sur l'appareil (ML Kit) : le modèle se télécharge une fois par langue. Ne fonctionne que pour les sous-titres SRT chargés, pas pour les pistes DVB de la chaîne.")
+    Hint("Traduction sur l'appareil (ML Kit) : le modèle se télécharge une fois par langue.")
 
     // --- Apparence ---
     SectionTitle("Apparence (style OSN)")
