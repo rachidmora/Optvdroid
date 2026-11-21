@@ -7,7 +7,13 @@ import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateMapOf
 import com.atvplayer.data.Prefs
+import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.Translation
+import com.google.mlkit.nl.translate.Translator
+import com.google.mlkit.nl.translate.TranslatorOptions
+import com.google.mlkit.common.model.DownloadConditions
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.nio.ByteBuffer
@@ -15,7 +21,9 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import kotlin.concurrent.thread
 
-data class Cue(val start: Long, val end: Long, val text: String)
+data class Cue(val start: Long, val end: Long, val text: String, val idx: Int = 0)
+
+enum class TransMode(val label: String) { Translated("Traduction"), Both("Les deux"), Original("Original") }
 
 enum class SubStyle(val label: String) { Osn("OSN"), Box("Boîte"), Plain("Simple") }
 enum class Enc(val label: String) { Auto("Auto"), Utf8("UTF-8"), Arabic("Arabe 1256"), Latin("Latin 1252") }
@@ -50,6 +58,54 @@ class SubtitleEngine(private val appCtx: Context, private val prefs: Prefs) {
     }
 
     val loaded get() = cues.isNotEmpty()
+
+    // ---------- Traduction en direct (ML Kit, hors ligne après téléchargement du modèle) ----------
+    var transOn by mutableStateOf(false); private set
+    var transSource by mutableStateOf(TranslateLanguage.ENGLISH); private set
+    var transTarget by mutableStateOf(TranslateLanguage.ARABIC); private set
+    var transMode by mutableStateOf(TransMode.Both)
+    var transStatus by mutableStateOf(""); private set
+    private var translator: Translator? = null
+    private var transReady = false
+    private val cache = mutableStateMapOf<Int, String>()
+    private val pending = HashSet<Int>()
+
+    fun configureTranslation(on: Boolean, src: String = transSource, tgt: String = transTarget) {
+        transOn = on; transSource = src; transTarget = tgt
+        cache.clear(); pending.clear(); transReady = false
+        translator?.close(); translator = null
+        if (!on) { transStatus = ""; return }
+        if (src == tgt) { transStatus = "Choisis deux langues différentes"; return }
+        val t = Translation.getClient(
+            TranslatorOptions.Builder().setSourceLanguage(src).setTargetLanguage(tgt).build()
+        )
+        translator = t
+        transStatus = "Téléchargement du modèle de traduction…"
+        t.downloadModelIfNeeded(DownloadConditions.Builder().build())
+            .addOnSuccessListener { transReady = true; transStatus = "Traduction prête" }
+            .addOnFailureListener { transStatus = "Erreur : ${it.message}" }
+    }
+
+    private fun request(idx: Int) {
+        val t = translator ?: return
+        if (!transReady || idx !in cues.indices || !pending.add(idx)) return
+        t.translate(cues[idx].text)
+            .addOnSuccessListener { cache[idx] = it }
+            .addOnFailureListener { pending.remove(idx) }
+    }
+
+    /** Traduction de la réplique si prête (sinon la demande est lancée). */
+    fun translated(c: Cue): String? {
+        if (!transOn) return null
+        cache[c.idx]?.let { return it }
+        request(c.idx)
+        return null
+    }
+
+    /** Pré-traduit les répliques à venir pour qu'elles soient prêtes à l'affichage. */
+    fun prefetch(from: Int) { for (i in from..from + 6) request(i) }
+
+    fun release() { try { translator?.close() } catch (_: Exception) {} }
 
     // ---------- Chargement ----------
     fun loadUrl(url: String, eventBeginSec: Long?) {
@@ -92,6 +148,7 @@ class SubtitleEngine(private val appCtx: Context, private val prefs: Prefs) {
         val b = raw ?: return
         val list = SrtParser.parse(SrtParser.decode(b, enc))
         cues = list
+        cache.clear(); pending.clear()
         status = if (list.isEmpty()) "Aucune réplique trouvée (essaie un autre encodage)" else "${list.size} répliques chargées"
     }
 
@@ -176,6 +233,6 @@ object SrtParser {
             if (body.isNotEmpty()) out += Cue(ms(g[1], g[2], g[3], g[4]), ms(g[5], g[6], g[7], g[8]), body)
         }
         out.sortBy { it.start }
-        return out
+        return out.mapIndexed { i, c -> c.copy(idx = i) }
     }
 }

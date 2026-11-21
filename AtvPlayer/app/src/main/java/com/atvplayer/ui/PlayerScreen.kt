@@ -64,7 +64,10 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
         ic.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         ic.hide(WindowInsetsCompat.Type.systemBars())
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        w.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)   // l'écran ne s'éteint plus pendant la lecture
         onDispose {
+            w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            subs.release()
             ic.show(WindowInsetsCompat.Type.systemBars())
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             vm.prefs.saveImage(controller.image)

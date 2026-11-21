@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.atvplayer.SubStyle
 import com.atvplayer.SubtitleEngine
+import com.atvplayer.TransMode
 import kotlinx.coroutines.delay
 
 /** Police arabe (Tajawal) téléchargée au build ; repli sur la police du système si absente. */
@@ -35,35 +36,62 @@ private fun rememberSubFont(): FontFamily {
     }
 }
 
-/** Affiche la réplique courante du .srt, style chaînes arabes (blanc, contour noir, gras). */
+/** Affiche la réplique courante du .srt, style chaînes arabes (blanc, contour noir, gras), avec traduction optionnelle. */
 @Composable
 fun BoxScope.SubtitleOverlay(e: SubtitleEngine) {
     if (!e.loaded || !e.visible) return
-    var text by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(e.cues, e.offsetMs, e.originMs) {
-        while (true) { text = e.cueAt(e.positionMs())?.text; delay(120) }
+    // (texte original, traduction si prête)
+    var shown by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    LaunchedEffect(e.cues, e.offsetMs, e.originMs, e.transOn) {
+        while (true) {
+            val cue = e.cueAt(e.positionMs())
+            shown = if (cue == null) null else {
+                if (e.transOn) e.prefetch(cue.idx)
+                cue.text to e.translated(cue)
+            }
+            delay(120)
+        }
     }
-    val t = text ?: return
+    val (orig, tr) = shown ?: return
     val font = rememberSubFont()
     val fill = if (e.yellow) Color(0xFFFFEB3B) else Color.White
-    val base = TextStyle(
-        fontFamily = font, fontWeight = FontWeight.Bold, fontSize = e.textSize.sp,
-        lineHeight = (e.textSize * 1.35f).sp, textAlign = TextAlign.Center,
-    )
-    Box(
+
+    val main: String
+    var second: String? = null
+    when {
+        !e.transOn || e.transMode == TransMode.Original -> main = orig
+        e.transMode == TransMode.Translated -> main = tr ?: orig
+        else -> { main = tr ?: orig; if (tr != null) second = orig }
+    }
+    Column(
         Modifier.align(Alignment.BottomCenter).fillMaxWidth(0.82f).padding(bottom = e.bottomDp.dp),
-        contentAlignment = Alignment.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        when (e.style) {
+        StyledSub(main, e.style, e.textSize, font, fill, 1f)
+        second?.let {
+            Spacer(Modifier.height(4.dp))
+            StyledSub(it, e.style, e.textSize * 0.68f, font, fill, 0.85f)
+        }
+    }
+}
+
+@Composable
+private fun StyledSub(t: String, style: SubStyle, size: Float, font: FontFamily, fill: Color, alpha: Float) {
+    val base = TextStyle(
+        fontFamily = font, fontWeight = FontWeight.Bold, fontSize = size.sp,
+        lineHeight = (size * 1.35f).sp, textAlign = TextAlign.Center,
+    )
+    Box(contentAlignment = Alignment.Center) {
+        when (style) {
             SubStyle.Osn -> {
-                Text(t, style = base.copy(color = Color.Black, drawStyle = Stroke(width = 9f, join = StrokeJoin.Round)))
-                Text(t, style = base.copy(color = fill, shadow = Shadow(Color(0x99000000), Offset(2f, 3f), 6f)))
+                Text(t, style = base.copy(color = Color.Black.copy(alpha = alpha), drawStyle = Stroke(width = 9f, join = StrokeJoin.Round)))
+                Text(t, style = base.copy(color = fill.copy(alpha = alpha), shadow = Shadow(Color(0x99000000), Offset(2f, 3f), 6f)))
             }
             SubStyle.Box -> Text(
-                t, style = base.copy(color = fill),
+                t, style = base.copy(color = fill.copy(alpha = alpha)),
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xB3000000)).padding(horizontal = 16.dp, vertical = 6.dp),
             )
-            SubStyle.Plain -> Text(t, style = base.copy(color = fill, shadow = Shadow(Color.Black, Offset(2f, 2f), 4f)))
+            SubStyle.Plain -> Text(t, style = base.copy(color = fill.copy(alpha = alpha), shadow = Shadow(Color.Black, Offset(2f, 2f), 4f)))
         }
     }
 }

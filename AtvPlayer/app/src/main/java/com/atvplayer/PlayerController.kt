@@ -106,14 +106,23 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
                 lastEvent = "event=0x" + Integer.toHexString(ev.type)
                 when (ev.type) {
                     MediaPlayer.Event.Opening -> { buffering = true; error = false }
-                    MediaPlayer.Event.Playing -> { buffering = false; refreshTracks() }
+                    MediaPlayer.Event.Playing -> { buffering = false; retries = 0; refreshTracks() }
                     MediaPlayer.Event.Buffering -> { buffering = ev.buffering < 100f }
                     MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESSelected -> refreshTracks()
                     MediaPlayer.Event.Vout -> applyImage()
-                    MediaPlayer.Event.EncounteredError -> { error = true; buffering = false }
+                    MediaPlayer.Event.EncounteredError, MediaPlayer.Event.EndReached -> scheduleRetry()
                 }
             }
         }
+    }
+
+    private var retries = 0
+    /** Flux coupé (veille réseau, coupure du récepteur) : on relance tout seul, jusqu'à 8 fois. */
+    private fun scheduleRetry() {
+        if (retries >= 8) { error = true; buffering = false; return }
+        retries++
+        buffering = true
+        main.postDelayed({ replay() }, 2500)
     }
 
     init {

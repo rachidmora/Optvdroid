@@ -41,4 +41,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.videolan.android:libvlc-all:3.6.0")
+    implementation("com.google.mlkit:translate:17.0.3")
 }
