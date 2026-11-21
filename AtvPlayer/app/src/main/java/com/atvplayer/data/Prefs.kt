@@ -40,6 +40,21 @@ class Prefs(ctx: Context) {
         sp.edit().putString("favs", arr.toString()).apply()
     }
 
+    fun loadAudioSources(): List<AudioSource> = try {
+        val arr = org.json.JSONArray(sp.getString("audioSources", "[]"))
+        (0 until arr.length()).map { arr.getJSONArray(it) }.map { AudioSource(it.getString(0), it.getString(1)) }
+    } catch (_: Exception) { emptyList() }
+
+    fun saveAudioSources(list: List<AudioSource>) {
+        val arr = org.json.JSONArray()
+        list.forEach { arr.put(org.json.JSONArray().put(it.name).put(it.url)) }
+        sp.edit().putString("audioSources", arr.toString()).apply()
+    }
+
+    var autoSubs: Boolean
+        get() = sp.getBoolean("autoSubs", true)
+        set(v) { sp.edit().putBoolean("autoSubs", v).apply() }
+
     var lastRef: String
         get() = sp.getString("lastRef", "") ?: ""
         set(v) { sp.edit().putString("lastRef", v).apply() }

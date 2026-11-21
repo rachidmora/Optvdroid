@@ -16,7 +16,9 @@ import android.view.ViewGroup
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.atvplayer.data.AudioSource
 import com.atvplayer.data.ImageSettings
+import com.atvplayer.data.Prefs
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -58,7 +60,7 @@ half4 main(float2 p) {
  * Enveloppe libVLC : lecture TS, pistes audio, sous-titres, audio/SRT externes,
  * décalages (synchro avec le direct) et réglages d'image / qualité.
  */
-class PlayerController(private val appCtx: Context, initialImage: ImageSettings) {
+class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
 
     private val main = Handler(Looper.getMainLooper())
     private val libVlc = LibVLC(
@@ -76,7 +78,7 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
     var selectedSub by mutableStateOf(-1); private set
     var audioDelayMs by mutableStateOf(0); private set
     var subDelayMs by mutableStateOf(0); private set
-    var image by mutableStateOf(initialImage); private set
+    var image by mutableStateOf(prefs.loadImage()); private set
     var buffering by mutableStateOf(true); private set
     var error by mutableStateOf(false); private set
     var aspect by mutableStateOf(Aspect.Fit); private set
@@ -84,6 +86,10 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
     var hardware by mutableStateOf(true); private set
     var message by mutableStateOf<String?>(null); private set
     var vlcSharpen by mutableStateOf(0f); private set
+    var autoSubs by mutableStateOf(prefs.autoSubs); private set
+    var audioSources by mutableStateOf(prefs.loadAudioSources()); private set
+    var activeAudio by mutableStateOf<AudioSource?>(null); private set
+    private var autoSubDone = false
 
     val sharpnessSupported get() = Build.VERSION.SDK_INT >= 33
 
@@ -114,6 +120,7 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
         error = false; buffering = true
         audioTracks = emptyList(); subTracks = emptyList()
         audioDelayMs = 0; subDelayMs = 0
+        activeAudio = null; autoSubDone = false
         val media = Media(libVlc, Uri.parse(url)).apply {
             addOption(if (hardware) ":avcodec-hw=any" else ":avcodec-hw=none")
             addOption(":network-caching=1500")
@@ -142,6 +149,48 @@ class PlayerController(private val appCtx: Context, initialImage: ImageSettings)
         subTracks = mp.spuTracks?.map { TrackItem(it.id, it.name) }.orEmpty()
         selectedAudio = mp.audioTrack
         selectedSub = mp.spuTrack
+        // Sous-titres automatiques de la chaîne (DVB / télétexte) : on active la 1re piste dispo
+        if (autoSubs && !autoSubDone) {
+            val first = subTracks.firstOrNull { it.id >= 0 }
+            if (first != null) { autoSubDone = true; mp.setSpuTrack(first.id); selectedSub = first.id }
+        }
+    }
+
+    fun changeAutoSubs(on: Boolean) {
+        autoSubs = on; prefs.autoSubs = on
+        if (on) { autoSubDone = false; refreshTracks() } else { autoSubDone = true; selectSub(-1) }
+    }
+
+    // ---------- Sources audio IP enregistrées ----------
+    /** Joue la source en remplacement de l'audio de la chaîne (VLC ne lit qu'une piste audio : la chaîne est coupée). */
+    fun playAudioSource(src: AudioSource) {
+        activeAudio = src
+        addSlave(IMedia.Slave.Type.Audio, src.url, false, src.name)
+    }
+
+    fun useChannelAudio() {
+        activeAudio = null
+        audioTracks.firstOrNull { it.id >= 0 }?.let { selectAudio(it.id) }
+    }
+
+    private fun saveSources(l: List<AudioSource>) { audioSources = l; prefs.saveAudioSources(l) }
+    fun addSource(name: String, url: String) {
+        if (url.isBlank()) return
+        saveSources(audioSources + AudioSource(name.ifBlank { url }, url.trim()))
+    }
+    fun removeSource(src: AudioSource) {
+        saveSources(audioSources - src)
+        if (activeAudio == src) activeAudio = null
+    }
+
+    /** Série numérotée : pattern d'URL avec {n}, ex. http://serveur/{n} de 1 à 10. */
+    fun addSeries(urlPattern: String, namePattern: String, from: Int, to: Int) {
+        if (!urlPattern.contains("{n}") || to < from || to - from > 99) { message = "Série invalide : utilise {n} dans l'URL"; return }
+        val added = (from..to).map { n ->
+            AudioSource(namePattern.ifBlank { "Audio {n}" }.replace("{n}", n.toString()), urlPattern.trim().replace("{n}", n.toString()))
+        }
+        saveSources(audioSources + added.filter { a -> audioSources.none { it.url == a.url } })
+        message = "${added.size} sources ajoutées"
     }
 
     fun selectAudio(id: Int) { mp.setAudioTrack(id); selectedAudio = id }

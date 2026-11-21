@@ -44,3 +44,6 @@ data class ImageSettings(
 ) {
     val isDefault get() = this == ImageSettings()
 }
+
+/** Source audio IP enregistrée par l'utilisateur (ex. commentaire d'un match). */
+data class AudioSource(val name: String, val url: String)

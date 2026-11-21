@@ -192,17 +192,71 @@ fun SidePanel(panel: Panel, c: PlayerController, onClose: () -> Unit) {
 private fun AudioPanel(c: PlayerController) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { c.addExternalAudioFile(it) } }
     TrackList(c.audioTracks, c.selectedAudio, "Aucune piste audio") { c.selectAudio(it) }
-    SectionTitle("Audio externe (IP)")
-    UrlField("URL du flux audio (http://…)", "Ajouter") { c.addExternalAudioUrl(it) }
-    OutlinedButton({ picker.launch(arrayOf("audio/*", "*/*")) }, Modifier.padding(top = 6.dp)) { Text("Choisir un fichier audio") }
+
+    SectionTitle("Sources audio IP")
+    if (c.audioSources.isEmpty()) Hint("Aucune source enregistrée. Ajoute-en ci-dessous.")
+    c.audioSources.forEach { src ->
+        val active = c.activeAudio == src
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { c.playAudioSource(src) }.padding(vertical = 2.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(selected = active, onClick = { c.playAudioSource(src) })
+            Text(src.name, color = if (active) KeyRed else Color.White, fontSize = 14.sp, maxLines = 1, modifier = Modifier.weight(1f))
+            IconButton({ c.removeSource(src) }) { Icon(Icons.Default.Close, "Supprimer", tint = Pal.Muted) }
+        }
+    }
+    if (c.activeAudio != null) {
+        OutlinedButton({ c.useChannelAudio() }, Modifier.padding(top = 4.dp)) { Text("Revenir à l'audio de la chaîne") }
+    }
+    Hint("Quand une source est active, le son de la chaîne est coupé. Règle ensuite la synchro ci-dessous.")
+
     SectionTitle("Synchro audio")
     DelayControl(c.audioDelayMs) { c.setAudioDelay(it) }
-    Hint("Valeur + : le son arrive plus tard. Valeur − : plus tôt.")
+    Hint("Valeur − : le son arrive plus tôt. Valeur + : plus tard.")
+
+    SectionTitle("Ajouter une source")
+    AddSource(c)
+    SectionTitle("Ajouter une série (ex. 1 à 10)")
+    AddSeries(c)
+
+    SectionTitle("Autres")
+    UrlField("URL audio à jouer une fois (http://…)", "Jouer") { c.addExternalAudioUrl(it) }
+    OutlinedButton({ picker.launch(arrayOf("audio/*", "*/*")) }, Modifier.padding(top = 6.dp)) { Text("Choisir un fichier audio") }
+}
+
+@Composable
+private fun AddSource(c: PlayerController) {
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Nom") }, modifier = Modifier.fillMaxWidth())
+    OutlinedTextField(url, { url = it }, singleLine = true, label = { Text("URL du flux audio") }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+    Button({ c.addSource(name, url); name = ""; url = "" }, Modifier.padding(top = 6.dp)) { Text("Enregistrer") }
+}
+
+@Composable
+private fun AddSeries(c: PlayerController) {
+    var urlP by remember { mutableStateOf("") }
+    var nameP by remember { mutableStateOf("") }
+    var from by remember { mutableStateOf("1") }
+    var to by remember { mutableStateOf("10") }
+    OutlinedTextField(urlP, { urlP = it }, singleLine = true, label = { Text("URL avec {n}  (ex. http://…/{n})") }, modifier = Modifier.fillMaxWidth())
+    OutlinedTextField(nameP, { nameP = it }, singleLine = true, label = { Text("Nom avec {n}  (ex. Match {n})") }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(from, { from = it }, singleLine = true, label = { Text("De") }, modifier = Modifier.weight(1f))
+        OutlinedTextField(to, { to = it }, singleLine = true, label = { Text("À") }, modifier = Modifier.weight(1f))
+    }
+    Button({ c.addSeries(urlP, nameP, from.toIntOrNull() ?: 1, to.toIntOrNull() ?: 10) }, Modifier.padding(top = 6.dp)) { Text("Ajouter la série") }
 }
 
 @Composable
 private fun SubsPanel(c: PlayerController) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { c.addSubtitleFile(it) } }
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Sous-titres automatiques de la chaîne", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Switch(checked = c.autoSubs, onCheckedChange = { c.changeAutoSubs(it) })
+    }
+    Hint("Active seule la 1re piste DVB/télétexte quand la chaîne en diffuse une.")
     TrackList(c.subTracks, c.selectedSub, "Aucun sous-titre") { c.selectSub(it) }
     SectionTitle("Sous-titres externes (.srt)")
     UrlField("URL du fichier .srt (http://…)", "Ajouter") { c.addSubtitleUrl(it) }

@@ -50,7 +50,7 @@ enum class Panel { None, Audio, Subs, Image, Quality }
 fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     val activity = ctx as Activity
-    val controller = remember { PlayerController(ctx.applicationContext, vm.prefs.loadImage()) }
+    val controller = remember { PlayerController(ctx.applicationContext, vm.prefs) }
 
     // Plein écran immersif + paysage (comme une TV)
     DisposableEffect(Unit) {
