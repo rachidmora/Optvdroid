@@ -56,13 +56,23 @@ class OpenWebIfApi(private val cfg: BoxConfig) {
             .map { Bouquet(it.getString("servicereference"), cleanBouquet(it.optString("servicename")).ifBlank { it.optString("servicename") }) }
     }
 
-    /** Chaînes d'un bouquet (les marqueurs/séparateurs sont ignorés). */
-    suspend fun channels(bouquetRef: String): List<Channel> {
-        val arr = getJson("/api/getservices?sRef=${enc(bouquetRef)}").optJSONArray("services")
+    /** Satellites scannés sur le récepteur (Astra 19.2E, Badr 26E...). */
+    suspend fun satellites(): List<Bouquet> {
+        val root = "1:7:1:0:0:0:0:0:0:0:(type == 1) || (type == 17) || (type == 22) || (type == 25) || (type == 31) || (type == 134) || (type == 195) FROM SATELLITES ORDER BY satellitePosition"
+        val arr = getJson("/api/getservices?sRef=${enc(root)}").optJSONArray("services") ?: return emptyList()
+        return (0 until arr.length()).map { arr.getJSONObject(it) }
+            .map { Bouquet(it.getString("servicereference"), "📡 " + clean(it.optString("servicename")), 1) }
+    }
+
+    /** Chaînes d'un bouquet ou d'un satellite (marqueurs et dossiers ignorés). */
+    suspend fun channels(b: Bouquet): List<Channel> {
+        // Satellite : on retire "FROM PROVIDERS" pour obtenir directement tous ses services
+        val ref = if (b.kind == 1) b.ref.replace(Regex("\\s*FROM PROVIDERS"), "") else b.ref
+        val arr = getJson("/api/getservices?sRef=${enc(ref)}").optJSONArray("services")
             ?: return emptyList()
         var n = 0
         return (0 until arr.length()).map { arr.getJSONObject(it) }
-            .filter { !it.getString("servicereference").startsWith("1:64:") }
+            .filter { val r = it.getString("servicereference"); !r.startsWith("1:64:") && !r.startsWith("1:7:") }
             .map { Channel(it.getString("servicereference"), clean(it.optString("servicename")), ++n) }
     }
 
@@ -83,6 +93,13 @@ class OpenWebIfApi(private val cfg: BoxConfig) {
             )
         }
         return out
+    }
+
+    /** Programme en cours / suivant d'une seule chaîne (listes satellite et favoris). */
+    suspend fun epgOne(ch: Channel): Pair<EpgEvent?, EpgEvent?> {
+        val now = try { epg("/api/epgservicenow?sRef=${enc(ch.ref)}").values.firstOrNull() } catch (_: Exception) { null }
+        val next = try { epg("/api/epgservicenext?sRef=${enc(ch.ref)}").values.firstOrNull() } catch (_: Exception) { null }
+        return now to next
     }
 
     /** Programme en cours pour toutes les chaînes du bouquet. */

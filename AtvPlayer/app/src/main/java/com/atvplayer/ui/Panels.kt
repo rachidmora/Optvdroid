@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -95,7 +97,7 @@ fun ChannelPanel(
             contentPadding = PaddingValues(vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(vm.bouquets) { b ->
+            items(vm.categories) { b ->
                 FilterChip(
                     selected = b.ref == vm.selected?.ref,
                     onClick = { vm.selectBouquet(b) },
@@ -118,6 +120,8 @@ private fun ChannelRow(vm: MainViewModel, ch: Channel, nowSec: Long) {
     val now = vm.now[ch.key]
     val next = vm.next[ch.key]
     val playing = ch.ref == vm.current?.ref
+    val fav = vm.isFavorite(ch)
+    LaunchedEffect(ch.key, vm.selected?.ref) { vm.ensureEpg(ch) }
     Row(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
@@ -144,6 +148,9 @@ private fun ChannelRow(vm: MainViewModel, ch: Channel, nowSec: Long) {
             } else {
                 Text("Pas d'EPG", color = Pal.Muted, fontSize = 12.sp)
             }
+        }
+        IconButton({ vm.toggleFavorite(ch) }) {
+            Icon(if (fav) Icons.Filled.Star else Icons.Outlined.StarBorder, "Favori", tint = if (fav) KeyYellow else Pal.Muted)
         }
     }
 }

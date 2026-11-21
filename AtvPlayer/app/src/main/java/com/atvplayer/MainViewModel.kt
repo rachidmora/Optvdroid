@@ -18,6 +18,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var api by mutableStateOf(OpenWebIfApi(config)); private set
 
     var bouquets by mutableStateOf<List<Bouquet>>(emptyList()); private set
+    var satellites by mutableStateOf<List<Bouquet>>(emptyList()); private set
+    var favorites by mutableStateOf(prefs.loadFavorites()); private set
+
+    /** Favoris, puis bouquets, puis satellites. */
+    val categories: List<Bouquet> get() = listOf(Bouquet.Favorites) + bouquets + satellites
+    fun isFavorite(ch: Channel) = favorites.any { it.key == ch.key }
     var selected by mutableStateOf<Bouquet?>(null); private set
     var channels by mutableStateOf<List<Channel>>(emptyList()); private set
     var now by mutableStateOf<Map<String, EpgEvent>>(emptyMap()); private set
@@ -44,6 +50,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             loading = true; error = null
             try {
                 bouquets = api.bouquets()
+                satellites = try { api.satellites() } catch (_: Exception) { emptyList() }
                 bouquets.firstOrNull()?.let { selectBouquet(it) }
             } catch (e: Exception) {
                 error = e.message ?: e.javaClass.simpleName
@@ -51,17 +58,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val requestedEpg = HashSet<String>()
+
+    /** EPG chargé à la demande (une chaîne à la fois) pour les satellites et favoris. */
+    fun ensureEpg(ch: Channel) {
+        val k = ch.key
+        if (selected?.kind == 0 || !requestedEpg.add(k)) return
+        viewModelScope.launch {
+            val (n, nx) = api.epgOne(ch)
+            if (n != null) now = now + (k to n)
+            if (nx != null) next = next + (k to nx)
+        }
+    }
+
+    fun toggleFavorite(ch: Channel) {
+        favorites = if (isFavorite(ch)) favorites.filter { it.key != ch.key } else favorites + ch
+        prefs.saveFavorites(favorites)
+        if (selected?.kind == 2) channels = favorites.mapIndexed { i, c -> c.copy(number = i + 1) }
+    }
+
     fun selectBouquet(b: Bouquet) {
         selected = b
         epgJob?.cancel()
+        requestedEpg.clear()
+        if (b.kind == 2) {
+            channels = favorites.mapIndexed { i, c -> c.copy(number = i + 1) }
+            return
+        }
         epgJob = viewModelScope.launch {
             try {
-                channels = api.channels(b.ref)
+                channels = api.channels(b)
                 error = null
                 if (current == null && channels.isNotEmpty()) {
                     current = channels.firstOrNull { it.ref == prefs.lastRef } ?: channels.first()
                 }
             } catch (e: Exception) { error = e.message; return@launch }
+            if (b.kind != 0) return@launch
             while (true) {
                 try {
                     now = api.epgNow(b.ref)

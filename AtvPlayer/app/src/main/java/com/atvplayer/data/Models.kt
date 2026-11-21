@@ -8,7 +8,13 @@ data class BoxConfig(
     val pass: String = "",
 )
 
-data class Bouquet(val ref: String, val name: String)
+/** kind : 0 = bouquet, 1 = satellite, 2 = favoris (locaux). */
+data class Bouquet(val ref: String, val name: String, val kind: Int = 0) {
+    companion object {
+        const val FAV_REF = "__favorites__"
+        val Favorites = Bouquet(FAV_REF, "★ Favoris", 2)
+    }
+}
 
 data class Channel(val ref: String, val name: String, val number: Int) {
     /** Clé normalisée pour faire correspondre les refs (avec/sans ':' final). */
