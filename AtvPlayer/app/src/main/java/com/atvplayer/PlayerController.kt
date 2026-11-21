@@ -85,6 +85,9 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     var deint by mutableStateOf(Deint.Auto); private set
     var hardware by mutableStateOf(true); private set
     var message by mutableStateOf<String?>(null); private set
+    /** URL en cours sans identifiants, pour l'affichage d'erreur. */
+    val currentUrl: String get() = (lastUrl ?: "").replace(Regex("//[^/@]*@"), "//")
+    var lastEvent by mutableStateOf(""); private set
     var vlcSharpen by mutableStateOf(0f); private set
     var autoSubs by mutableStateOf(prefs.autoSubs); private set
     var audioSources by mutableStateOf(prefs.loadAudioSources()); private set
@@ -96,6 +99,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     init {
         mp.setEventListener { ev ->
             main.post {
+                lastEvent = "event=0x" + Integer.toHexString(ev.type)
                 when (ev.type) {
                     MediaPlayer.Event.Opening -> { buffering = true; error = false }
                     MediaPlayer.Event.Playing -> { buffering = false; refreshTracks() }
@@ -152,7 +156,12 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         // Sous-titres automatiques de la chaîne (DVB / télétexte) : on active la 1re piste dispo
         if (autoSubs && !autoSubDone) {
             val first = subTracks.firstOrNull { it.id >= 0 }
-            if (first != null) { autoSubDone = true; mp.setSpuTrack(first.id); selectedSub = first.id }
+            if (first != null) {
+                autoSubDone = true
+                main.postDelayed({
+                    try { mp.setSpuTrack(first.id); selectedSub = first.id } catch (_: Exception) {}
+                }, 2500)
+            }
         }
     }
 
@@ -221,7 +230,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
 
     private fun doAddSlave(type: Int, uri: Uri, label: String) {
         val ok = mp.addSlave(type, uri, true)
-        message = if (ok) "$label ajouté" else "$label : échec"
+        message = if (ok) "$label ajouté ($uri)" else "$label : échec ($uri)"
         main.postDelayed({ refreshTracks() }, 1000)
     }
 

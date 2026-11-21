@@ -153,7 +153,7 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
         }
         if (controller.error) {
             Text(
-                "Impossible de lire ce flux", color = Color.White,
+                "Impossible de lire ce flux\n${controller.currentUrl}\n${controller.lastEvent}", color = Color.White,
                 modifier = Modifier.align(Alignment.Center).clip(RoundedCornerShape(12.dp))
                     .background(Pal.Glass).padding(16.dp),
             )

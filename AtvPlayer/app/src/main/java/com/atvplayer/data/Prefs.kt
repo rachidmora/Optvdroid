@@ -52,7 +52,7 @@ class Prefs(ctx: Context) {
     }
 
     var autoSubs: Boolean
-        get() = sp.getBoolean("autoSubs", true)
+        get() = sp.getBoolean("autoSubs", false)
         set(v) { sp.edit().putBoolean("autoSubs", v).apply() }
 
     var lastRef: String
