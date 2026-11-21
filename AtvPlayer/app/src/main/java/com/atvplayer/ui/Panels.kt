@@ -38,6 +38,9 @@ import com.atvplayer.Aspect
 import com.atvplayer.Deint
 import com.atvplayer.MainViewModel
 import com.atvplayer.PlayerController
+import com.atvplayer.SubtitleEngine
+import com.atvplayer.SubStyle
+import com.atvplayer.Enc
 import com.atvplayer.TrackItem
 import com.atvplayer.data.Channel
 import com.atvplayer.data.ImageSettings
@@ -159,7 +162,7 @@ private fun ChannelRow(vm: MainViewModel, ch: Channel, nowSec: Long) {
 // ====================== Panneaux de réglage (à droite) ======================
 
 @Composable
-fun SidePanel(panel: Panel, c: PlayerController, onClose: () -> Unit) {
+fun SidePanel(panel: Panel, c: PlayerController, subs: SubtitleEngine, eventBegin: Long?, onClose: () -> Unit) {
     val accent = when (panel) {
         Panel.Audio -> KeyRed; Panel.Subs -> KeyGreen; Panel.Image -> KeyYellow; else -> KeyBlue
     }
@@ -181,7 +184,7 @@ fun SidePanel(panel: Panel, c: PlayerController, onClose: () -> Unit) {
         }
         when (panel) {
             Panel.Audio -> AudioPanel(c)
-            Panel.Subs -> SubsPanel(c)
+            Panel.Subs -> SubsPanel(c, subs, eventBegin)
             Panel.Image -> ImageControls(c)
             Panel.Quality -> QualityPanel(c)
             Panel.None -> {}
@@ -256,20 +259,79 @@ private fun AddSeries(c: PlayerController) {
 }
 
 @Composable
-private fun SubsPanel(c: PlayerController) {
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { c.addSubtitleFile(it) } }
+private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Long?) {
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { subs.loadUri(it, eventBegin) } }
+
+    // --- SRT : lecteur à part, démarré au même état que le film (EPG) ---
+    SectionTitle("Sous-titres SRT (lecteur à part)")
+    UrlField("URL du fichier .srt (http://…)", "Charger") { subs.loadUrl(it, eventBegin) }
+    OutlinedButton({ picker.launch(arrayOf("*/*")) }, Modifier.padding(top = 6.dp)) { Text("Choisir un fichier .srt") }
+    if (subs.status.isNotBlank()) {
+        Text("${if (subs.fileName.isNotBlank()) subs.fileName + " — " else ""}${subs.status}",
+            color = if (subs.status.startsWith("Erreur") || subs.status.startsWith("Aucune")) MaterialTheme.colorScheme.error else KeyGreen,
+            fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+    if (subs.loaded) {
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Afficher les sous-titres", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Switch(checked = subs.visible, onCheckedChange = { subs.visible = it })
+        }
+        SectionTitle("Synchro")
+        val pos by produceState(subs.positionMs()) { while (true) { value = subs.positionMs(); delay(500) } }
+        Text("Temps du film : ${fmtHms(pos)}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Décalage : ${"%+.1f".format(subs.offsetMs / 1000f)} s", color = Pal.Muted, fontSize = 13.sp)
+        Hint("Le SRT démarre à l'heure de début du programme (EPG). Si le film a commencé plus tard (pubs), corrige ci-dessous.")
+        Button({ subs.syncNextCueNow() }, Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Afficher la prochaine réplique MAINTENANT") }
+        Hint("Écoute une phrase du film puis appuie dès qu'elle est dite.")
+        OffsetRow(subs, -300_000, -60_000, -10_000)
+        OffsetRow(subs, 10_000, 60_000, 300_000)
+        OffsetRow(subs, -1000, -500, -100)
+        OffsetRow(subs, 100, 500, 1000)
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton({ subs.startFromEpg(eventBegin) }, Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) { Text("Début EPG", fontSize = 12.sp) }
+            OutlinedButton({ subs.startNow() }, Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) { Text("Début = maintenant", fontSize = 12.sp) }
+            OutlinedButton({ subs.clear() }, Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) { Text("Retirer", fontSize = 12.sp) }
+        }
+    }
+
+    // --- Apparence ---
+    SectionTitle("Apparence (style OSN)")
+    ChipRow(SubStyle.values().toList(), subs.style, { it.label }) { subs.style = it; subs.saveStyle() }
+    LabeledSlider("Taille", subs.textSize, 18f..56f, onFinished = { subs.saveStyle() }) { subs.textSize = it }
+    LabeledSlider("Hauteur", subs.bottomDp, 0f..220f, onFinished = { subs.saveStyle() }) { subs.bottomDp = it }
+    ChipRow(listOf(false, true), subs.yellow, { if (it) "Jaune" else "Blanc" }) { subs.yellow = it; subs.saveStyle() }
+    SectionTitle("Encodage du fichier")
+    ChipRow(Enc.values().toList(), subs.enc, { it.label }) { subs.changeEnc(it) }
+    Hint("Pour l'arabe, \"Auto\" détecte UTF-8 ou Windows-1256. Si les lettres sont illisibles, essaie « Arabe 1256 ».")
+
+    // --- Pistes propres à la chaîne (DVB / télétexte) ---
+    SectionTitle("Sous-titres de la chaîne")
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("Sous-titres automatiques de la chaîne", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Text("Activer automatiquement", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Switch(checked = c.autoSubs, onCheckedChange = { c.changeAutoSubs(it) })
     }
-    Hint("Active seule la 1re piste DVB/télétexte quand la chaîne en diffuse une.")
-    TrackList(c.subTracks, c.selectedSub, "Aucun sous-titre") { c.selectSub(it) }
-    SectionTitle("Sous-titres externes (.srt)")
-    UrlField("URL du fichier .srt (http://…)", "Ajouter") { c.addSubtitleUrl(it) }
-    OutlinedButton({ picker.launch(arrayOf("*/*")) }, Modifier.padding(top = 6.dp)) { Text("Choisir un fichier .srt") }
-    SectionTitle("Synchro sous-titres")
-    DelayControl(c.subDelayMs) { c.setSubDelay(it) }
-    Hint("Valeur + : les sous-titres apparaissent plus tard. Valeur − : plus tôt.")
+    TrackList(c.subTracks, c.selectedSub, "Aucune piste de sous-titres dans cette chaîne") { c.selectSub(it) }
+}
+
+private fun fmtHms(ms: Long): String {
+    val neg = ms < 0
+    val t = kotlin.math.abs(ms) / 1000
+    return (if (neg) "−" else "") + "%d:%02d:%02d".format(t / 3600, (t / 60) % 60, t % 60)
+}
+
+@Composable
+private fun OffsetRow(subs: SubtitleEngine, a: Long, b: Long, c: Long) {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(a, b, c).forEach { d ->
+            val abs = kotlin.math.abs(d)
+            val label = (if (d > 0) "+" else "−") + when {
+                abs >= 60_000 -> "${abs / 60_000} min"
+                abs >= 1000 -> "${abs / 1000} s"
+                else -> "0,${abs / 100} s"
+            }
+            FilledTonalButton({ subs.nudge(d) }, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text(label, fontSize = 13.sp) }
+        }
+    }
 }
 
 @Composable

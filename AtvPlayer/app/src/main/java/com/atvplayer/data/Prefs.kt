@@ -56,6 +56,19 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("autoSubs", false)
         set(v) { sp.edit().putBoolean("autoSubs", v).apply() }
 
+    var subSize: Float
+        get() = sp.getFloat("subSize", 30f)
+        set(v) { sp.edit().putFloat("subSize", v).apply() }
+    var subBottom: Float
+        get() = sp.getFloat("subBottom", 56f)
+        set(v) { sp.edit().putFloat("subBottom", v).apply() }
+    var subStyle: Int
+        get() = sp.getInt("subStyle", 0)
+        set(v) { sp.edit().putInt("subStyle", v).apply() }
+    var subYellow: Boolean
+        get() = sp.getBoolean("subYellow", false)
+        set(v) { sp.edit().putBoolean("subYellow", v).apply() }
+
     var lastRef: String
         get() = sp.getString("lastRef", "") ?: ""
         set(v) { sp.edit().putString("lastRef", v).apply() }

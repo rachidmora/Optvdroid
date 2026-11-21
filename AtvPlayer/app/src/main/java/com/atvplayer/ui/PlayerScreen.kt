@@ -43,6 +43,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.atvplayer.MainViewModel
 import com.atvplayer.PlayerController
+import com.atvplayer.SubtitleEngine
 import com.atvplayer.data.Channel
 import kotlinx.coroutines.delay
 import org.videolan.libvlc.util.VLCVideoLayout
@@ -54,6 +55,7 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
     val ctx = LocalContext.current
     val activity = ctx as Activity
     val controller = remember { PlayerController(ctx.applicationContext, vm.prefs) }
+    val subs = remember { SubtitleEngine(ctx.applicationContext, vm.prefs) }
 
     // Plein écran immersif + paysage (comme une TV)
     DisposableEffect(Unit) {
@@ -72,6 +74,7 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
 
     val ch = vm.current
     LaunchedEffect(ch?.ref, vm.api) { ch?.let { controller.play(vm.api.streamUrl(it)) } }
+    LaunchedEffect(ch?.ref) { subs.clear() }
 
     var panel by remember { mutableStateOf(Panel.None) }
     var showBar by remember { mutableStateOf(false) }
@@ -162,6 +165,9 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             )
         }
 
+        // Sous-titres SRT (style OSN)
+        SubtitleOverlay(subs)
+
         // Infobar moderne (liste fermée)
         AnimatedVisibility(
             showBar && !vm.showList && panel == Panel.None,
@@ -195,7 +201,7 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             panel != Panel.None, Modifier.align(Alignment.CenterEnd),
             enter = slideInHorizontally { it } + fadeIn(), exit = slideOutHorizontally { it } + fadeOut(),
         ) {
-            SidePanel(panel, controller, onClose = { panel = Panel.None })
+            SidePanel(panel, controller, subs, vm.current?.let { vm.now[it.key]?.begin }, onClose = { panel = Panel.None })
         }
     }
 }
