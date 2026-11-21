@@ -42,6 +42,7 @@ import com.atvplayer.MainViewModel
 import com.atvplayer.PlayerController
 import com.atvplayer.SubtitleEngine
 import com.atvplayer.SubStyle
+import com.atvplayer.TransMode
 import com.atvplayer.Enc
 import com.atvplayer.TrackItem
 import com.atvplayer.data.Channel
