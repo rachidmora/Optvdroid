@@ -6,6 +6,7 @@ data class BoxConfig(
     val streamPort: Int = 8001,
     val user: String = "",
     val pass: String = "",
+    val tmdbKey: String = "",
 )
 
 /** kind : 0 = bouquet, 1 = satellite, 2 = favoris (locaux). */

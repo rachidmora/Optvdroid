@@ -11,12 +11,13 @@ class Prefs(ctx: Context) {
         streamPort = sp.getInt("streamPort", 8001),
         user = sp.getString("user", "") ?: "",
         pass = sp.getString("pass", "") ?: "",
+        tmdbKey = sp.getString("tmdb", "") ?: "",
     )
 
     fun saveConfig(c: BoxConfig) = sp.edit()
         .putString("host", c.host.trim()).putInt("httpPort", c.httpPort)
         .putInt("streamPort", c.streamPort).putString("user", c.user)
-        .putString("pass", c.pass).apply()
+        .putString("pass", c.pass).putString("tmdb", c.tmdbKey.trim()).apply()
 
     fun loadImage() = ImageSettings(
         saturation = sp.getFloat("sat", 1f),

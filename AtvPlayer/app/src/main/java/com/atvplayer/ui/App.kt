@@ -34,6 +34,7 @@ private fun SetupDialog(cfg: BoxConfig, onDismiss: () -> Unit, onSave: (BoxConfi
     var stream by remember { mutableStateOf(cfg.streamPort.toString()) }
     var user by remember { mutableStateOf(cfg.user) }
     var pass by remember { mutableStateOf(cfg.pass) }
+    var tmdb by remember { mutableStateOf(cfg.tmdbKey) }
     val num = KeyboardOptions(keyboardType = KeyboardType.Number)
 
     AlertDialog(
@@ -54,11 +55,13 @@ private fun SetupDialog(cfg: BoxConfig, onDismiss: () -> Unit, onSave: (BoxConfi
                     pass, { pass = it }, label = { Text("Mot de passe") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                 )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(tmdb, { tmdb = it }, label = { Text("Clé TMDB pour les posters (optionnel)") }, singleLine = true)
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                onSave(BoxConfig(host.trim(), http.toIntOrNull() ?: 80, stream.toIntOrNull() ?: 8001, user.trim(), pass))
+                onSave(BoxConfig(host.trim(), http.toIntOrNull() ?: 80, stream.toIntOrNull() ?: 8001, user.trim(), pass, tmdb.trim()))
             }) { Text("Enregistrer") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },

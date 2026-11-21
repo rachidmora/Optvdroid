@@ -65,9 +65,11 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     private val main = Handler(Looper.getMainLooper())
     private val libVlc = LibVLC(
         appCtx,
-        arrayListOf("--network-caching=1500", "--audio-time-stretch", "--no-drop-late-frames", "--no-skip-frames")
+        arrayListOf("--network-caching=1500", "--audio-time-stretch")
     )
     private val mp = MediaPlayer(libVlc)
+    /** Second lecteur, audio seul, pour les sources audio IP. */
+    private val audioMp = MediaPlayer(libVlc)
     private var layout: VLCVideoLayout? = null
     private var texture: TextureView? = null
     private var lastUrl: String? = null
@@ -92,6 +94,8 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     var autoSubs by mutableStateOf(prefs.autoSubs); private set
     var audioSources by mutableStateOf(prefs.loadAudioSources()); private set
     var activeAudio by mutableStateOf<AudioSource?>(null); private set
+    var extAudioStatus by mutableStateOf(""); private set
+    var videoDelayMs by mutableStateOf(0); private set
     private var autoSubDone = false
 
     val sharpnessSupported get() = Build.VERSION.SDK_INT >= 33
@@ -112,22 +116,50 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         }
     }
 
+    init {
+        audioMp.setEventListener { ev ->
+            main.post {
+                when (ev.type) {
+                    MediaPlayer.Event.Opening -> extAudioStatus = "Connexion…"
+                    MediaPlayer.Event.Buffering -> { if (ev.buffering < 100f) extAudioStatus = "Mise en mémoire ${ev.buffering.toInt()}%" }
+                    MediaPlayer.Event.Playing -> {
+                        extAudioStatus = "En lecture"
+                        audioMp.setAudioDelay(audioDelayMs * 1000L)
+                    }
+                    MediaPlayer.Event.EncounteredError -> {
+                        extAudioStatus = "Erreur : flux audio inaccessible"
+                        message = "Audio IP : flux inaccessible"
+                    }
+                    MediaPlayer.Event.EndReached -> extAudioStatus = "Flux terminé"
+                }
+            }
+        }
+    }
+
     fun attach(view: VLCVideoLayout) {
         layout = view
         // TextureView obligatoire pour pouvoir appliquer les effets GPU
-        mp.attachViews(view, null, true, true)
+        mp.attachViews(view, null, false, true)
         view.post { applyImage() }
     }
 
+    /** Zapping : change de chaîne et arrête l'audio externe. */
     fun play(url: String) {
+        stopExternalAudio()
+        audioDelayMs = 0; subDelayMs = 0
+        startMain(url)
+    }
+
+    private fun startMain(url: String) {
         lastUrl = url
         error = false; buffering = true
         audioTracks = emptyList(); subTracks = emptyList()
-        audioDelayMs = 0; subDelayMs = 0
-        activeAudio = null; autoSubDone = false
+        autoSubDone = false
+        val caching = 1500 + if (activeAudio != null) videoDelayMs else 0
         val media = Media(libVlc, Uri.parse(url)).apply {
             addOption(if (hardware) ":avcodec-hw=any" else ":avcodec-hw=none")
-            addOption(":network-caching=1500")
+            addOption(":network-caching=$caching")
+            addOption(":live-caching=$caching")
             if (vlcSharpen > 0f) {
                 // Filtre VLC logiciel : décodage vers buffers (pas de rendu direct) pour pouvoir filtrer
                 addOption(":no-mediacodec-dr")
@@ -143,10 +175,11 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         mp.media = media
         media.release()
         mp.play()
+        mp.setVolume(if (activeAudio != null) 0 else 100)
         main.postDelayed({ applyImage() }, 600)
     }
 
-    private fun replay() { lastUrl?.let { play(it) } }
+    private fun replay() { lastUrl?.let { startMain(it) } }
 
     private fun refreshTracks() {
         audioTracks = mp.audioTracks?.map { TrackItem(it.id, it.name) }.orEmpty()
@@ -173,14 +206,45 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     // ---------- Sources audio IP enregistrées ----------
     /** Joue la source en remplacement de l'audio de la chaîne (VLC ne lit qu'une piste audio : la chaîne est coupée). */
     fun playAudioSource(src: AudioSource) {
+        val hadVideoDelay = videoDelayMs > 0
         activeAudio = src
-        addSlave(IMedia.Slave.Type.Audio, src.url, false, src.name)
+        startExternal(Uri.parse(src.url.trim()), src.name)
+        mp.setVolume(0)   // le son de la chaîne est coupé
+        if (hadVideoDelay) replay()
     }
 
     fun useChannelAudio() {
-        activeAudio = null
-        audioTracks.firstOrNull { it.id >= 0 }?.let { selectAudio(it.id) }
+        val needReplay = videoDelayMs > 0
+        stopExternalAudio()
+        mp.setVolume(100)
+        if (needReplay) replay()
     }
+
+    /** Lance le flux audio dans le second lecteur. */
+    private fun startExternal(uri: Uri, label: String) {
+        extAudioStatus = "Connexion…"
+        val media = Media(libVlc, uri).apply {
+            addOption(":no-video")
+            addOption(":network-caching=500")
+            addOption(":http-reconnect")
+        }
+        audioMp.media = media
+        media.release()
+        audioMp.play()
+        audioMp.setVolume(100)
+        message = "Audio : $label"
+    }
+
+    private fun stopExternalAudio() {
+        activeAudio = null
+        extAudioStatus = ""
+        try { audioMp.stop() } catch (_: Exception) {}
+        mp.setVolume(100)
+    }
+
+    /** Retarde la vidéo (tampon) pour la caler sur un audio IP qui arrive en avance. */
+    fun previewVideoDelay(ms: Int) { videoDelayMs = ms }
+    fun changeVideoDelay(ms: Int) { videoDelayMs = ms; if (activeAudio != null) replay() }
 
     private fun saveSources(l: List<AudioSource>) { audioSources = l; prefs.saveAudioSources(l) }
     fun addSource(name: String, url: String) {
@@ -189,7 +253,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     }
     fun removeSource(src: AudioSource) {
         saveSources(audioSources - src)
-        if (activeAudio == src) activeAudio = null
+        if (activeAudio == src) stopExternalAudio()
     }
 
     /** Série numérotée : pattern d'URL avec {n}, ex. http://serveur/{n} de 1 à 10. */
@@ -206,7 +270,10 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     fun selectSub(id: Int) { mp.setSpuTrack(id); selectedSub = id }
 
     // ---------- Synchro (live) ----------
-    fun setAudioDelay(ms: Int) { audioDelayMs = ms; mp.setAudioDelay(ms * 1000L) }
+    fun setAudioDelay(ms: Int) {
+        audioDelayMs = ms
+        if (activeAudio != null) audioMp.setAudioDelay(ms * 1000L) else mp.setAudioDelay(ms * 1000L)
+    }
     fun setSubDelay(ms: Int) { subDelayMs = ms; mp.setSpuDelay(ms * 1000L) }
 
     // ---------- Sources externes ----------
@@ -234,8 +301,22 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         main.postDelayed({ refreshTracks() }, 1000)
     }
 
-    fun addExternalAudioUrl(url: String) = addSlave(IMedia.Slave.Type.Audio, url, false, "Audio externe")
-    fun addExternalAudioFile(uri: Uri) = addSlave(IMedia.Slave.Type.Audio, uri.toString(), true, "Audio externe")
+    fun addExternalAudioUrl(url: String) = playAudioSource(AudioSource(url.trim(), url.trim()))
+    fun addExternalAudioFile(uri: Uri) {
+        thread {
+            try {
+                val f = File(appCtx.cacheDir, "ext_${System.currentTimeMillis()}.audio")
+                appCtx.contentResolver.openInputStream(uri)?.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
+                main.post {
+                    activeAudio = AudioSource("Fichier audio", f.absolutePath)
+                    startExternal(Uri.fromFile(f), "fichier")
+                    mp.setVolume(0)
+                }
+            } catch (e: Exception) {
+                main.post { message = "Impossible de lire le fichier : ${e.message}" }
+            }
+        }
+    }
     fun addSubtitleUrl(url: String) = addSlave(IMedia.Slave.Type.Subtitle, url, false, "Sous-titre")
     fun addSubtitleFile(uri: Uri) = addSlave(IMedia.Slave.Type.Subtitle, uri.toString(), true, "Sous-titre")
     fun clearMessage() { message = null }
@@ -312,6 +393,6 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
 
     fun release() {
         main.removeCallbacksAndMessages(null)
-        try { mp.stop(); mp.detachViews(); mp.release(); libVlc.release() } catch (_: Exception) {}
+        try { audioMp.stop(); audioMp.release(); mp.stop(); mp.detachViews(); mp.release(); libVlc.release() } catch (_: Exception) {}
     }
 }

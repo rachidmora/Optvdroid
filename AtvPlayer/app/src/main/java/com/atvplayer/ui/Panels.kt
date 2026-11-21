@@ -45,6 +45,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 // ====================== Liste de chaînes (moitié gauche) ======================
 
@@ -207,13 +208,18 @@ private fun AudioPanel(c: PlayerController) {
         }
     }
     if (c.activeAudio != null) {
+        Text("État : ${c.extAudioStatus}", color = if (c.extAudioStatus.startsWith("Erreur")) MaterialTheme.colorScheme.error else KeyGreen,
+            fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
         OutlinedButton({ c.useChannelAudio() }, Modifier.padding(top = 4.dp)) { Text("Revenir à l'audio de la chaîne") }
     }
     Hint("Quand une source est active, le son de la chaîne est coupé. Règle ensuite la synchro ci-dessous.")
 
     SectionTitle("Synchro audio")
     DelayControl(c.audioDelayMs) { c.setAudioDelay(it) }
-    Hint("Valeur − : le son arrive plus tôt. Valeur + : plus tard.")
+    Hint("Valeur + : le son IP est retardé. Si le commentaire est en AVANCE sur l'image, retarde plutôt la vidéo :")
+    LabeledSlider("Retard vidéo (s)", c.videoDelayMs / 1000f, 0f..15f,
+        onFinished = { c.changeVideoDelay(c.videoDelayMs) }) { c.previewVideoDelay((it * 2).roundToInt() * 500) }
+    Hint("Relâche le curseur pour appliquer (la chaîne se relance avec un tampon plus long).")
 
     SectionTitle("Ajouter une source")
     AddSource(c)

@@ -41,6 +41,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveConfig(c: BoxConfig) {
         prefs.saveConfig(c)
         config = c
+        posterRequested.clear(); posters = emptyMap()
         api = OpenWebIfApi(c)
         refresh()
     }
@@ -59,6 +60,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private val requestedEpg = HashSet<String>()
+
+    var posters by mutableStateOf<Map<String, String?>>(emptyMap()); private set
+    private val posterRequested = HashSet<String>()
+
+    /** Poster TMDB du programme (si une clé est configurée). */
+    fun ensurePoster(title: String) {
+        if (config.tmdbKey.isBlank() || !posterRequested.add(title)) return
+        viewModelScope.launch {
+            val url = try { Tmdb(config.tmdbKey).poster(title) } catch (_: Exception) { null }
+            posters = posters + (title to url)
+        }
+    }
 
     /** EPG chargé à la demande (une chaîne à la fois) pour les satellites et favoris. */
     fun ensureEpg(ch: Channel) {
