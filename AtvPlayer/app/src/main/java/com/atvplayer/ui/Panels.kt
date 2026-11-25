@@ -81,46 +81,49 @@ fun ChannelPanel(
         Modifier.fillMaxHeight().fillMaxWidth(0.5f)
             .background(Pal.Panel)
             .statusBarsPadding().navigationBarsPadding()
-            .pointerInput(Unit) { detectTapGestures { } },
+            .pointerInput(Unit) { detectTapGestures { } }
+            .padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(Modifier.fillMaxWidth().background(Pal.PanelDark).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(vm.selected?.name ?: "Chaînes", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Light,
+                Text(vm.selected?.name ?: "Chaînes", color = Pal.Text, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Bouquet · ${list.size} chaînes", color = Pal.Muted, fontSize = 12.sp)
+                Text("${list.size} chaînes", color = Pal.Muted, fontSize = 12.sp)
             }
-            Text(clock, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Light)
-            Spacer(Modifier.width(6.dp))
             IconButton({ searching = !searching; if (!searching) query = "" }) { Icon(Icons.Default.Search, "Rechercher", tint = Pal.Muted) }
             IconButton({ vm.refresh() }) { Icon(Icons.Default.Refresh, "Actualiser", tint = Pal.Muted) }
             IconButton(onOpenSettings) { Icon(Icons.Default.Settings, "Réglages", tint = Pal.Muted) }
+            Spacer(Modifier.width(4.dp))
+            Text(clock, color = Pal.Text, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
         if (searching) {
             OutlinedTextField(
                 query, { query = it }, singleLine = true, placeholder = { Text("Rechercher une chaîne") },
-                shape = RectangleShape, modifier = Modifier.fillMaxWidth().padding(8.dp),
+                shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
             )
         }
-        LazyRow(Modifier.fillMaxWidth().background(Color(0x0FFFFFFF))) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(vm.categories) { b ->
                 val sel = b.ref == vm.selected?.ref
-                Column(Modifier.clickable { vm.selectBouquet(b) }) {
-                    Text(b.name, maxLines = 1, color = if (sel) Color.White else Pal.Muted, fontSize = 14.sp,
-                        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp))
-                    Box(Modifier.fillMaxWidth().height(3.dp).background(if (sel) Pal.Accent else Color.Transparent))
+                Box(
+                    Modifier.clip(RoundedCornerShape(50))
+                        .background(if (sel) Pal.AccentBrush else Brush.horizontalGradient(listOf(Color(0x14FFFFFF), Color(0x14FFFFFF))))
+                        .clickable { vm.selectBouquet(b) }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text(b.name, maxLines = 1, color = if (sel) Color(0xFF04121A) else Pal.Muted,
+                        fontSize = 13.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.SemiBold)
                 }
             }
         }
-        vm.error?.let { Text("Erreur : $it", color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(8.dp)) }
+        vm.error?.let { Text("Erreur : $it", color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
         if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Pal.Accent)
 
-        LazyColumn(Modifier.weight(1f), state = state) {
+        LazyColumn(Modifier.weight(1f), state = state, verticalArrangement = Arrangement.spacedBy(7.dp)) {
             items(list, key = { it.ref + it.number }) { ch -> ChannelRow(vm, ch, nowSec) }
         }
-        Box(Modifier.fillMaxWidth().background(Pal.PanelDark).padding(horizontal = 16.dp, vertical = 10.dp)) {
-            ColorKeys(onRed, onGreen, onYellow, onBlue)
-        }
+        ColorKeys(onRed, onGreen, onYellow, onBlue)
     }
 }
 
@@ -130,41 +133,48 @@ private fun ChannelRow(vm: MainViewModel, ch: Channel, nowSec: Long) {
     val next = vm.next[ch.key]
     val playing = ch.ref == vm.current?.ref
     val fav = vm.isFavorite(ch)
+    val shape = RoundedCornerShape(18.dp)
     LaunchedEffect(ch.key, vm.selected?.ref) { vm.ensureEpg(ch) }
-    Column(
-        Modifier.fillMaxWidth()
-            .background(if (playing) Pal.Accent else Color.Transparent)
-            .clickable { if (playing) vm.showList = false else vm.play(ch) },
+    Row(
+        Modifier.fillMaxWidth().clip(shape)
+            .background(if (playing) Brush.horizontalGradient(listOf(Color(0x2E22D3EE), Color(0x1F6366F1))) else Brush.horizontalGradient(listOf(Color(0x0DFFFFFF), Color(0x0DFFFFFF))))
+            .then(if (playing) Modifier.border(BorderStroke(1.5.dp, Pal.Accent), shape) else Modifier)
+            .clickable { if (playing) vm.showList = false else vm.play(ch) }
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("${ch.number}", color = Color.White, fontSize = 18.sp, modifier = Modifier.width(38.dp))
-            Picon(vm.api, ch, Modifier.size(width = 66.dp, height = 42.dp))
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(ch.name, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (now != null) Text("${fmtTime(now.begin)} – ${fmtTime(now.end)}", color = Color.White.copy(alpha = .8f), fontSize = 12.sp)
-                }
-                if (now != null) {
-                    Text(now.title, color = Color.White.copy(alpha = if (playing) 1f else .85f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(4.dp))
-                    LinearProgressIndicator(
-                        progress = { now.progress(nowSec) },
-                        modifier = Modifier.fillMaxWidth().height(3.dp),
-                        color = if (playing) Color.White else Pal.Accent, trackColor = Color(0x33FFFFFF),
-                    )
-                    if (next != null) Text("${fmtTime(next.begin)}  ${next.title}", color = if (playing) Color(0xFFD6ECF8) else Pal.Muted,
-                        fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-                } else {
-                    Text("Pas d'EPG", color = if (playing) Color(0xFFD6ECF8) else Pal.Muted, fontSize = 13.sp)
+        Text("${ch.number}", color = if (playing) Pal.Accent else Pal.Muted, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(30.dp))
+        Picon(vm.api, ch, Modifier.size(width = 84.dp, height = 54.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(ch.name, color = Pal.Text, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                qualityOf(ch.name)?.let { Spacer(Modifier.width(8.dp)); Badge(it, it == "4K") }
+                if (playing) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.clip(RoundedCornerShape(5.dp)).background(Pal.Live).padding(horizontal = 6.dp, vertical = 1.dp)) {
+                        Text("LIVE", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
+                    }
                 }
             }
-            IconButton({ vm.toggleFavorite(ch) }) {
-                Icon(if (fav) Icons.Filled.Star else Icons.Outlined.StarBorder, "Favori", tint = if (fav) KeyYellow else Color(0x66FFFFFF))
+            if (now != null) {
+                Text(now.title, color = Color(0xFFD3DBEE), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { now.progress(nowSec) },
+                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                    color = Pal.Accent, trackColor = Color(0x1FFFFFFF),
+                )
+                if (next != null) Text("${fmtTime(next.begin)}  ${next.title}", color = Pal.Muted, fontSize = 12.sp, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+            } else {
+                Text("Pas d'EPG", color = Pal.Muted, fontSize = 12.sp)
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Pal.Divider))
+        IconButton({ vm.toggleFavorite(ch) }) {
+            Icon(if (fav) Icons.Filled.Star else Icons.Outlined.StarBorder, "Favori", tint = if (fav) Pal.Amber else Pal.Muted)
+        }
     }
 }
 
@@ -179,16 +189,16 @@ fun SidePanel(panel: Panel, c: PlayerController, subs: SubtitleEngine, eventBegi
         Panel.Audio -> "Audio"; Panel.Subs -> "Sous-titres"; Panel.Image -> "Image"; else -> "Qualité"
     }
     Column(
-        Modifier.fillMaxHeight().width(400.dp).background(Pal.PanelDark)
+        Modifier.padding(14.dp).fillMaxHeight().width(420.dp).clip(RoundedCornerShape(26.dp)).background(Pal.Glass)
             .statusBarsPadding().navigationBarsPadding()
             .pointerInput(Unit) { detectTapGestures { } }
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(width = 8.dp, height = 30.dp).background(accent))
+            Box(Modifier.size(width = 6.dp, height = 30.dp).clip(RoundedCornerShape(3.dp)).background(accent))
             Spacer(Modifier.width(12.dp))
-            Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Light, modifier = Modifier.weight(1f))
+            Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
             IconButton(onClose) { Icon(Icons.Default.Close, "Fermer", tint = Color.White) }
         }
         when (panel) {
@@ -207,7 +217,7 @@ private fun AudioPanel(c: PlayerController) {
     SectionTitle("Langue audio préférée (toutes les chaînes)")
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("" to "Original", "ar" to "العربية", "en" to "English", "fr" to "Français", "de" to "Deutsch", "es" to "Español", "tr" to "Türkçe").forEach { (code, name) ->
-            FilterChip(selected = c.audioLang == code, onClick = { c.changeAudioLang(code) }, shape = RectangleShape, label = { Text(name, fontSize = 13.sp) })
+            FilterChip(selected = c.audioLang == code, onClick = { c.changeAudioLang(code) }, label = { Text(name, fontSize = 13.sp) })
         }
     }
     Hint("Sur chaque chaîne, cette langue est choisie automatiquement si elle existe. Sinon la piste d'origine reste active.")
@@ -457,7 +467,7 @@ private fun LabeledSlider(
 private fun <T> ChipRow(items: List<T>, selected: T, label: (T) -> String, onPick: (T) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEach { it ->
-            FilterChip(selected = it == selected, onClick = { onPick(it) }, shape = RectangleShape, label = { Text(label(it), fontSize = 13.sp) })
+            FilterChip(selected = it == selected, onClick = { onPick(it) }, label = { Text(label(it), fontSize = 13.sp) })
         }
     }
 }

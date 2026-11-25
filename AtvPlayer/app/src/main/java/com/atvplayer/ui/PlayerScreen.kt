@@ -6,6 +6,8 @@ import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -156,15 +158,19 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
         )
 
-        if (controller.buffering && !controller.error) {
-            CircularProgressIndicator(Modifier.align(Alignment.Center), color = Pal.Accent)
-        }
-        if (controller.error) {
-            Text(
-                "Impossible de lire ce flux\n${controller.currentUrl}\n${controller.lastEvent}", color = Color.White,
-                modifier = Modifier.align(Alignment.Center).clip(RoundedCornerShape(12.dp))
-                    .background(Pal.Glass).padding(16.dp),
-            )
+        // Comme sur un vrai récepteur : écran noir pendant le changement de chaîne (pas de cercle qui tourne),
+        // puis fondu vers l'image. Si rien n'arrive : « PAS DE SIGNAL ».
+        val cover by animateFloatAsState(if (controller.videoReady) 0f else 1f, tween(if (controller.videoReady) 350 else 80), label = "cover")
+        if (cover > 0.01f) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = cover)), contentAlignment = Alignment.Center) {
+                if (controller.noSignal) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("PAS DE SIGNAL", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 3.sp)
+                        Text(ch?.name ?: "", color = Pal.Muted, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+                        Text(controller.lastEvent, color = Color(0x55FFFFFF), fontSize = 11.sp, modifier = Modifier.padding(top = 14.dp))
+                    }
+                }
+            }
         }
 
         // Sous-titres SRT (style OSN)
@@ -177,7 +183,7 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
         ) {
-            if (ch != null) InfoBar(vm, ch, nowSec,
+            if (ch != null) InfoBar(vm, ch, nowSec, controller.audioTracks.size, controller.subTracks.count { it.id >= 0 },
                 onRed = { toggle(Panel.Audio) }, onGreen = { toggle(Panel.Subs) },
                 onYellow = { toggle(Panel.Image) }, onBlue = { toggle(Panel.Quality) },
                 onList = { vm.showList = true },
@@ -198,6 +204,12 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             )
         }
 
+        // Fiche du programme en cours, à droite de la liste
+        AnimatedVisibility(
+            vm.showList && panel == Panel.None, Modifier.align(Alignment.CenterEnd),
+            enter = fadeIn(), exit = fadeOut(),
+        ) { ch?.let { DetailsCard(vm, it, nowSec) } }
+
         // Panneaux de réglage (à droite)
         AnimatedVisibility(
             panel != Panel.None, Modifier.align(Alignment.CenterEnd),
@@ -209,10 +221,51 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
 }
 
 @Composable
+private fun DetailsCard(vm: MainViewModel, ch: Channel, nowSec: Long) {
+    val now = vm.now[ch.key]
+    val next = vm.next[ch.key]
+    val poster = now?.title?.let { vm.posters[it] }
+    LaunchedEffect(now?.title) { now?.title?.let { vm.ensurePoster(it) } }
+    Column(
+        Modifier.padding(end = 24.dp).fillMaxWidth(0.42f).clip(RoundedCornerShape(24.dp)).background(Pal.Panel).padding(18.dp),
+    ) {
+        Row {
+            if (poster != null) {
+                AsyncImage(
+                    model = poster, contentDescription = now?.title, contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 92.dp, height = 136.dp).clip(RoundedCornerShape(14.dp)),
+                )
+                Spacer(Modifier.width(16.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text("${ch.number} · ${ch.name}".uppercase(), color = Pal.Accent2.copy(alpha = 1f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1)
+                if (now != null) {
+                    Text(now.title, color = Pal.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                    Text("${fmtTime(now.begin)} – ${fmtTime(now.end)} · ${now.remainingMin(nowSec)} min restantes", color = Pal.Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                    if (now.description.isNotBlank()) Text(now.description, color = Color(0xFFB7C0D8), fontSize = 13.sp, maxLines = 4,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+                } else Text("Pas d'informations EPG", color = Pal.Muted, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp))
+            }
+        }
+        if (next != null) {
+            Row(Modifier.padding(top = 12.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF)).padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("ENSUITE", color = Pal.Accent, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                Spacer(Modifier.width(10.dp))
+                Text("${fmtTime(next.begin)}  ${next.title}", color = Pal.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
 private fun InfoBar(
     vm: MainViewModel,
     ch: Channel,
     nowSec: Long,
+    audioCount: Int,
+    subCount: Int,
     onRed: () -> Unit, onGreen: () -> Unit, onYellow: () -> Unit, onBlue: () -> Unit,
     onList: () -> Unit,
 ) {
@@ -220,75 +273,84 @@ private fun InfoBar(
     val next = vm.next[ch.key]
     val poster = now?.title?.let { vm.posters[it] }
     LaunchedEffect(now?.title) { now?.title?.let { vm.ensurePoster(it) } }
+    val shape = RoundedCornerShape(26.dp)
 
-    Column(Modifier.fillMaxWidth().background(Pal.Panel).navigationBarsPadding()) {
-        Row(Modifier.padding(start = 30.dp, end = 30.dp, top = 20.dp, bottom = 14.dp), verticalAlignment = Alignment.Top) {
-            // Affiche du programme ou grand picon
+    Column(
+        Modifier.navigationBarsPadding().padding(horizontal = 30.dp, vertical = 22.dp)
+            .fillMaxWidth().clip(shape).background(Pal.Glass).border(1.dp, Color(0x1AFFFFFF), shape)
+            .padding(horizontal = 26.dp, vertical = 20.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
             if (poster != null) {
                 AsyncImage(
-                    model = poster, contentDescription = now?.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(width = 112.dp, height = 168.dp).border(1.dp, Color(0x4DFFFFFF)),
+                    model = poster, contentDescription = now?.title, contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(width = 112.dp, height = 168.dp).clip(RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(16.dp)),
                 )
             } else {
-                Picon(vm.api, ch, Modifier.size(width = 136.dp, height = 86.dp))
+                Picon(vm.api, ch, Modifier.size(width = 132.dp, height = 84.dp))
             }
-            Spacer(Modifier.width(24.dp))
+            Spacer(Modifier.width(22.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.background(Pal.Accent).padding(horizontal = 12.dp, vertical = 2.dp)) {
-                        Text("${ch.number}", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+                    Box(Modifier.clip(RoundedCornerShape(9.dp)).background(Pal.AccentBrush).padding(horizontal = 11.dp, vertical = 3.dp)) {
+                        Text("${ch.number}", color = Color(0xFF04121A), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    if (poster != null) { Picon(vm.api, ch, Modifier.size(width = 58.dp, height = 36.dp)); Spacer(Modifier.width(10.dp)) }
+                    Text(ch.name, color = Pal.Text, fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        qualityOf(ch.name)?.let { Badge(it, true) }
+                        if (audioCount > 1) Badge("AUDIO ×$audioCount")
+                        if (subCount > 0) Badge("SUB")
                     }
                     Spacer(Modifier.width(14.dp))
-                    if (poster != null) {
-                        Picon(vm.api, ch, Modifier.size(width = 56.dp, height = 36.dp))
-                        Spacer(Modifier.width(12.dp))
-                    }
-                    Text(ch.name, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 20.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Text(fmtTime(nowSec), color = Color.White, fontWeight = FontWeight.Light, fontSize = 30.sp)
+                    Text(fmtTime(nowSec), color = Pal.Text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(8.dp))
                 if (now != null) {
-                    Text(now.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Light,
+                    Text(now.title, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(fmtTime(now.begin), color = Color.White, fontSize = 14.sp)
+                        Text(fmtTime(now.begin), color = Color(0xFFC9D2E8), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         LinearProgressIndicator(
                             progress = { now.progress(nowSec) },
-                            modifier = Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp),
-                            color = Pal.Accent, trackColor = Color(0x33FFFFFF),
+                            modifier = Modifier.weight(1f).padding(horizontal = 14.dp).height(6.dp).clip(RoundedCornerShape(3.dp)),
+                            color = Pal.Accent, trackColor = Color(0x26FFFFFF),
                         )
-                        Text("${fmtTime(now.end)}   +${now.remainingMin(nowSec)} min", color = Color.White, fontSize = 14.sp)
+                        Text("${fmtTime(now.end)}   ", color = Color(0xFFC9D2E8), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("${now.remainingMin(nowSec)} min restantes", color = Pal.Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
                     if (now.description.isNotBlank()) {
-                        Text(now.description, color = Color(0xFFC8D2DA), fontSize = 14.sp, maxLines = 3,
+                        Text(now.description, color = Color(0xFFB7C0D8), fontSize = 14.sp, maxLines = 3,
                             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
                     }
                 } else {
                     Text("Pas d'informations EPG", color = Pal.Muted, fontSize = 18.sp)
                 }
                 if (next != null) {
-                    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(fmtTime(next.begin), color = Pal.Accent, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        Modifier.padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF)).padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("ENSUITE", color = Pal.Accent, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
                         Spacer(Modifier.width(12.dp))
-                        Text(next.title, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${fmtTime(next.begin)}  ${next.title}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().background(Pal.PanelDark).padding(horizontal = 30.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.clickable(onClick = onList).padding(vertical = 4.dp)) {
-                Text("☰  Chaînes", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.width(26.dp))
+        Box(Modifier.padding(top = 14.dp).fillMaxWidth().height(1.dp).background(Pal.Divider))
+        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             ColorKeys(onRed, onGreen, onYellow, onBlue)
             Spacer(Modifier.weight(1f))
             if (vm.posterError != null) Text(vm.posterError ?: "", color = Pal.Muted, fontSize = 12.sp)
+            Box(Modifier.clickable(onClick = onList).padding(8.dp)) {
+                Text("☰  Chaînes", color = Pal.Muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

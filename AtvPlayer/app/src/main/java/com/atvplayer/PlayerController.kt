@@ -83,6 +83,11 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     var image by mutableStateOf(prefs.loadImage()); private set
     var buffering by mutableStateOf(true); private set
     var error by mutableStateOf(false); private set
+    /** Première image affichée ? (sinon écran noir, comme sur un vrai récepteur) */
+    var videoReady by mutableStateOf(false); private set
+    /** Aucun flux exploitable : on affiche « PAS DE SIGNAL ». */
+    var noSignal by mutableStateOf(false); private set
+    private val watchdog = Runnable { if (!videoReady) noSignal = true }
     var aspect by mutableStateOf(Aspect.values().getOrElse(prefs.aspect) { Aspect.Fit }); private set
     var deint by mutableStateOf(Deint.values().getOrElse(prefs.deint) { Deint.Auto }); private set
     var hardware by mutableStateOf(prefs.hardware); private set
@@ -108,14 +113,25 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
                 lastEvent = "event=0x" + Integer.toHexString(ev.type)
                 when (ev.type) {
                     MediaPlayer.Event.Opening -> { buffering = true; error = false }
-                    MediaPlayer.Event.Playing -> { buffering = false; retries = 0; refreshTracks() }
+                    MediaPlayer.Event.Playing -> {
+                        buffering = false; retries = 0; refreshTracks()
+                        // Radio (pas d'image) : on considère le flux prêt après un court délai
+                        main.postDelayed({
+                            if (!videoReady && mp.isPlaying && mp.videoTracksCount <= 0 && audioTracks.isNotEmpty()) markReady()
+                        }, 2500)
+                    }
                     MediaPlayer.Event.Buffering -> { buffering = ev.buffering < 100f }
                     MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESSelected -> refreshTracks()
-                    MediaPlayer.Event.Vout -> applyImage()
-                    MediaPlayer.Event.EncounteredError, MediaPlayer.Event.EndReached -> scheduleRetry()
+                    MediaPlayer.Event.Vout -> { applyImage(); if (ev.voutCount > 0) markReady() }
+                    MediaPlayer.Event.EncounteredError, MediaPlayer.Event.EndReached -> { if (!videoReady) noSignal = true; scheduleRetry() }
                 }
             }
         }
+    }
+
+    private fun markReady() {
+        videoReady = true; noSignal = false; error = false
+        main.removeCallbacks(watchdog)
     }
 
     private var retries = 0
@@ -164,6 +180,8 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     private fun startMain(url: String) {
         lastUrl = url
         error = false; buffering = true
+        videoReady = false; noSignal = false
+        main.removeCallbacks(watchdog); main.postDelayed(watchdog, 9000)
         audioTracks = emptyList(); subTracks = emptyList()
         autoSubDone = false; audioLangDone = false
         val caching = 1500 + if (activeAudio != null) videoDelayMs else 0

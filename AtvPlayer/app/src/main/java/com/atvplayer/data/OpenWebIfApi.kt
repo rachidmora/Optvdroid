@@ -112,6 +112,13 @@ class OpenWebIfApi(private val cfg: BoxConfig) {
     fun piconUrls(ch: Channel): List<String> {
         val sref = ch.key.replace(':', '_')
         val list = mutableListOf("$base/picon/$sref.png")
+        // Services HD/UHD (type 19, 25, 31…) : les picons sont souvent nommés avec le type 1
+        run {
+            val p = ch.key.split(':')
+            if (p.size > 3 && p[0] == "1" && p[2] != "1") {
+                list += "$base/picon/${(listOf("1", p[1], "1") + p.drop(3)).joinToString("_")}.png"
+            }
+        }
         // IPTV (4097/5001/5002...) : les picons sont souvent nommés comme un service DVB "1_"
         val parts = ch.key.split(':')
         if (parts.isNotEmpty() && parts[0] != "1") {
@@ -120,6 +127,9 @@ class OpenWebIfApi(private val cfg: BoxConfig) {
         // Nom SNP (ex: "sky sport 1 hd" -> skysport1hd)
         val snp = ch.name.lowercase().replace("&", "and").replace("+", "plus").replace(Regex("[^a-z0-9]"), "")
         if (snp.isNotBlank()) list += "$base/picon/$snp.png"
+        // Sans suffixe HD/UHD/4K
+        val snp2 = ch.name.lowercase().replace(Regex("\\b(hd|uhd|4k|fhd)\\b"), "").replace("&", "and").replace("+", "plus").replace(Regex("[^a-z0-9]"), "")
+        if (snp2.isNotBlank() && snp2 != snp) list += "$base/picon/$snp2.png"
         list += "$base/picon/${ch.name}.png"
         return list
     }
