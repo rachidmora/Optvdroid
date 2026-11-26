@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.atvplayer.LiveSubs
 import com.atvplayer.SubStyle
 import com.atvplayer.SubtitleEngine
 import kotlinx.coroutines.delay
@@ -83,5 +84,22 @@ fun StyledSub(t: String, style: SubStyle, size: Float, font: FontFamily, fill: C
             )
             SubStyle.Plain -> Text(t, style = base.copy(color = fill.copy(alpha = alpha), shadow = Shadow(Color.Black, Offset(2f, 2f), 4f)))
         }
+    }
+}
+
+/** Sous-titres télétexte traduits en direct (style OSN, texte arabe). */
+@Composable
+fun BoxScope.LiveSubsOverlay(live: LiveSubs, e: SubtitleEngine) {
+    val tr = live.translated
+    val orig = if (live.showOriginal) live.original else null
+    if (tr == null && orig == null) return
+    val font = rememberSubFont()
+    val fill = if (e.yellow) Color(0xFFFFEB3B) else Color.White
+    Column(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth(0.82f).padding(bottom = e.bottomDp.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        orig?.let { StyledSub(it, e.style, e.textSize * 0.62f, font, Color(0xFFD0D0D0), 0.9f); Spacer(Modifier.height(4.dp)) }
+        tr?.let { StyledSub(it, e.style, e.textSize, font, fill, 1f) }
     }
 }

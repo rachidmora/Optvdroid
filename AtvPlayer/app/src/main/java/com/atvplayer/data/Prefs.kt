@@ -91,4 +91,21 @@ class Prefs(ctx: Context) {
     var audioLang: String
         get() = sp.getString("audioLang", "") ?: ""
         set(v) { sp.edit().putString("audioLang", v).apply() }
+
+    // Traduction du télétexte (DeepL)
+    var ttxEnabled: Boolean
+        get() = sp.getBoolean("ttxEnabled", false)
+        set(v) { sp.edit().putBoolean("ttxEnabled", v).apply() }
+    var deeplKey: String
+        get() = sp.getString("deeplKey", "") ?: ""
+        set(v) { sp.edit().putString("deeplKey", v).apply() }
+    var ttxTarget: String
+        get() = sp.getString("ttxTarget", "AR") ?: "AR"
+        set(v) { sp.edit().putString("ttxTarget", v).apply() }
+    var ttxShowOriginal: Boolean
+        get() = sp.getBoolean("ttxShowOriginal", false)
+        set(v) { sp.edit().putBoolean("ttxShowOriginal", v).apply() }
+    var ttxPage: Int
+        get() = sp.getInt("ttxPage", 0)
+        set(v) { sp.edit().putInt("ttxPage", v).apply() }
 }

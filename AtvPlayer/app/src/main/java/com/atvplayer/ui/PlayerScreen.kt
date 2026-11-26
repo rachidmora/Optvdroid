@@ -175,6 +175,7 @@ fun PlayerScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
 
         // Sous-titres SRT (style OSN)
         SubtitleOverlay(subs)
+        LiveSubsOverlay(controller.live, subs)
 
         // Infobar moderne (liste fermée)
         AnimatedVisibility(

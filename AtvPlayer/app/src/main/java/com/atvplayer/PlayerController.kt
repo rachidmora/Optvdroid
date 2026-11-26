@@ -73,6 +73,8 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     private var layout: VLCVideoLayout? = null
     private var texture: TextureView? = null
     private var lastUrl: String? = null
+    /** Traduction en direct du télétexte (relais local + décodeur + DeepL). */
+    val live = LiveSubs(prefs)
 
     var audioTracks by mutableStateOf<List<TrackItem>>(emptyList()); private set
     var subTracks by mutableStateOf<List<TrackItem>>(emptyList()); private set
@@ -185,7 +187,8 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
         audioTracks = emptyList(); subTracks = emptyList()
         autoSubDone = false; audioLangDone = false
         val caching = 1500 + if (activeAudio != null) videoDelayMs else 0
-        val media = Media(libVlc, Uri.parse(url)).apply {
+        val playUrl = live.wrap(url)
+        val media = Media(libVlc, Uri.parse(playUrl)).apply {
             addOption(if (hardware) ":avcodec-hw=any" else ":avcodec-hw=none")
             addOption(":network-caching=$caching")
             addOption(":live-caching=$caching")
@@ -209,6 +212,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     }
 
     private fun replay() { lastUrl?.let { startMain(it) } }
+    fun restart() = replay()
 
     private fun refreshTracks() {
         audioTracks = mp.audioTracks?.map { TrackItem(it.id, it.name) }.orEmpty()
@@ -446,6 +450,7 @@ class PlayerController(private val appCtx: Context, private val prefs: Prefs) {
     }
 
     fun release() {
+        live.stop()
         main.removeCallbacksAndMessages(null)
         try { audioMp.stop(); audioMp.release(); mp.stop(); mp.detachViews(); mp.release(); libVlc.release() } catch (_: Exception) {}
     }

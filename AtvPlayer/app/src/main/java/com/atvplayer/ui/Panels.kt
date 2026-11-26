@@ -289,6 +289,31 @@ private fun AddSeries(c: PlayerController) {
 private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Long?) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { subs.loadUri(it, eventBegin) } }
 
+    // --- Traduction en direct du télétexte (DeepL) ---
+    val live = c.live
+    SectionTitle("Traduire le télétexte (ARD, ZDF…)")
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Traduction en direct", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Switch(checked = live.enabled, onCheckedChange = { live.setEnabled(it); c.restart() })
+    }
+    var keyText by remember { mutableStateOf(live.apiKey) }
+    OutlinedTextField(
+        keyText, { keyText = it }, singleLine = true, label = { Text("Clé DeepL (se termine par :fx si gratuite)") },
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+    )
+    Button({ live.setKey(keyText); c.restart() }, Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Enregistrer la clé et relancer") }
+    Spacer(Modifier.height(6.dp))
+    ChipRow(listOf("AR", "FR", "EN-GB"), live.target, { when (it) { "AR" -> "العربية"; "FR" -> "Français"; else -> "English" } }) { live.setTarget(it) }
+    if (live.status.isNotBlank()) {
+        Text(live.status, color = if (live.status.contains("refus") || live.status.contains("Quota") || live.status.contains("inaccess") || live.status.startsWith("Pas de") || live.status.contains("manquante")) MaterialTheme.colorScheme.error else KeyGreen,
+            fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Afficher aussi le texte d'origine", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Switch(checked = live.showOriginal, onCheckedChange = { live.setShowOriginal(it) })
+    }
+    Hint("Le télétexte est lu dans le flux de la chaîne puis traduit. Ça ne marche que sur les chaînes qui envoient des sous-titres télétexte. Si la traduction est en avance ou en retard, utilise « Retard vidéo » dans le panneau Audio.")
+
     // --- SRT : lecteur à part, démarré au même état que le film (EPG) ---
     SectionTitle("Sous-titres SRT (lecteur à part)")
     UrlField("URL du fichier .srt (http://…)", "Charger") { subs.loadUrl(it, eventBegin) }
