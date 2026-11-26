@@ -21,39 +21,58 @@ import kotlin.concurrent.thread
 // ======================================================================
 //  Décodeur de sous-titres télétexte EBU (DVB) lus dans un flux MPEG-TS
 // ======================================================================
+data class SubPage(val lang: String, val type: Int, val page: Int) {
+    val label: String get() = "%s %X%s".format(lang.uppercase(), page, if (type == 5) " (malentendants)" else "")
+}
+
 class TeletextDecoder(
     private val onPage: (String) -> Unit,
     private val onInfo: (String) -> Unit,
+    private val onPages: (List<SubPage>) -> Unit,
 ) {
-    /** Page forcée (ex. 0x150) ; 0 = automatique (selon le PMT). */
+    /** Page forcée (ex. 0x150) ; 0 = toutes les pages de sous-titres déclarées. */
     var forcedPage = 0
 
     private var carry = ByteArray(0)
-    private var pmtPid = -1
+    private val pmtPids = HashSet<Int>()
+    private var pmtDone = false
     private var ttxPid = -1
-    private var targetPage = 0
-    private var langHint = ""
+    private var targets = setOf<Int>()
+    private var candidates = listOf<SubPage>()
     private val pat = Section()
     private val pmt = Section()
     private var pes = ByteArray(0)
 
-    private var receiving = false
+    private var receiving = 0
     private var charset = 0
     private val rows = arrayOfNulls<String>(25)
+    private var active = 0
+    private var activeAt = 0L
     private var lastText = ""
 
     // Diagnostic
-    private var nBytes = 0L; private var nPmt = 0; private var nPmtPk = 0; private var pmtDone = false; private var nUnits = 0L; private var nHdr = 0L; private var nTarget = 0L; private var nPages = 0; private var seenPages = LinkedHashSet<Int>()
+    private var nBytes = 0L; private var nPmt = 0; private var nPmtPk = 0
+    private var nUnits = 0L; private var nHdr = 0L; private var nTarget = 0L; private var nPages = 0
+    private var seenPages = LinkedHashSet<Int>()
     private var lastRaw = ""
-    fun stats(): String = "flux %d Ko · PMT:%s(pid %s, paquets %d) · PID TTX:%s · page cible:%s · unités TTX:%d · en-têtes:%d (cible:%d) · pages vues:%s · sous-titres lus:%d%s".format(
-        nBytes / 1024, if (pmtPid >= 0) (if (nPmt > 0) "ok" else "attente") else "?", if (pmtPid >= 0) "0x%X".format(pmtPid) else "-", nPmtPk, if (ttxPid >= 0) "0x%X".format(ttxPid) else "aucun",
-        if (targetPage != 0) "%X".format(targetPage) else "-", nUnits, nHdr, nTarget, seenPages.take(8).joinToString(",") { "%X".format(it) }, nPages,
+    fun stats(): String = "flux %d Ko · programmes PAT:%d · PMT:%s (paquets %d) · PID TTX:%s · pages ciblées:%s · unités TTX:%d · en-têtes:%d (cible:%d) · pages vues:%s · sous-titres lus:%d%s".format(
+        nBytes / 1024, pmtPids.size, if (nPmt > 0) "ok" else "attente", nPmtPk,
+        if (ttxPid >= 0) "0x%X".format(ttxPid) else "aucun",
+        if (targets.isNotEmpty()) targets.joinToString(",") { "%X".format(it) } else "-",
+        nUnits, nHdr, nTarget, seenPages.take(10).joinToString(",") { "%X".format(it) }, nPages,
         if (lastRaw.isNotEmpty()) " · dernier: $lastRaw" else "")
 
     fun reset() {
-        nBytes = 0; nPmt = 0; nPmtPk = 0; pmtDone = false; nUnits = 0; nHdr = 0; nTarget = 0; nPages = 0; seenPages = LinkedHashSet(); lastRaw = ""
-        carry = ByteArray(0); pmtPid = -1; ttxPid = -1; targetPage = 0; langHint = ""
-        pes = ByteArray(0); receiving = false; lastText = ""; rows.fill(null)
+        nBytes = 0; nPmt = 0; nPmtPk = 0; nUnits = 0; nHdr = 0; nTarget = 0; nPages = 0; seenPages = LinkedHashSet(); lastRaw = ""
+        carry = ByteArray(0); pmtPids.clear(); pmtDone = false; ttxPid = -1; targets = emptySet(); candidates = emptyList()
+        pes = ByteArray(0); receiving = 0; active = 0; lastText = ""; rows.fill(null)
+    }
+
+    /** Choix manuel d'une page pour cette chaîne (0 = toutes). */
+    fun selectPage(p: Int) {
+        forcedPage = p
+        if (candidates.isNotEmpty() || ttxPid >= 0) targets = if (p != 0) setOf(p) else candidates.map { it.page }.toSet().ifEmpty { setOf(0x150) }
+        receiving = 0; active = 0; rows.fill(null)
     }
 
     fun feed(d: ByteArray, n: Int) {
@@ -76,9 +95,10 @@ class TeletextDecoder(
         val end = o + 188
         if (afc and 1 == 0 || p >= end) return
         when {
-            pid == 0 && pmtPid < 0 -> pat.add(a, p, end, pusi)?.let { parsePat(it) }
-            pid == pmtPid && !pmtDone -> { nPmtPk++; pmt.add(a, p, end, pusi)?.let { parsePmt(it) } }
-            ttxPid < 0 && pusi && pid != 0 && pid != pmtPid -> sniff(pid, a, p, end)
+            pid == 0 && pmtPids.isEmpty() -> pat.add(a, p, end, pusi)?.let { parsePat(it) }
+            // Le flux contient le PAT de tout le multiplex : on prend le PMT qui arrive vraiment
+            pid in pmtPids && !pmtDone -> { nPmtPk++; pmt.add(a, p, end, pusi)?.let { parsePmt(it) } }
+            ttxPid < 0 && pusi && pid != 0 && pid !in pmtPids -> sniff(pid, a, p, end)
             pid == ttxPid -> {
                 if (pusi) { if (pes.isNotEmpty()) processPes(pes); pes = a.copyOfRange(p, end) }
                 else if (pes.isNotEmpty()) pes += a.copyOfRange(p, end)
@@ -97,8 +117,8 @@ class TeletextDecoder(
         val len = a[st + 2].toInt() and 0xFF
         if (di in 0x10..0x1F && (unit == 0x02 || unit == 0x03 || unit == 0xFF) && len == 44) {
             ttxPid = pid
-            if (targetPage == 0) targetPage = if (forcedPage != 0) forcedPage else 0x150
-            onInfo("Télétexte détecté (PID 0x%X) : page %X essayée".format(pid, targetPage))
+            if (targets.isEmpty()) targets = setOf(if (forcedPage != 0) forcedPage else 0x150)
+            onInfo("Télétexte détecté (PID 0x%X) : page %s essayée".format(pid, targets.joinToString(",") { "%X".format(it) }))
         }
     }
 
@@ -124,7 +144,7 @@ class TeletextDecoder(
         while (i + 4 <= s.size - 4) {
             val prog = ((s[i].toInt() and 0xFF) shl 8) or (s[i + 1].toInt() and 0xFF)
             val pid = ((s[i + 2].toInt() and 0x1F) shl 8) or (s[i + 3].toInt() and 0xFF)
-            if (prog != 0) { pmtPid = pid; return }
+            if (prog != 0) pmtPids.add(pid)
             i += 4
         }
     }
@@ -134,7 +154,8 @@ class TeletextDecoder(
         nPmt++; pmtDone = true
         val pil = ((s[10].toInt() and 0x0F) shl 8) or (s[11].toInt() and 0xFF)
         var i = 12 + pil
-        var best = -1; var bestPage = 0; var bestLang = ""; var anyTtx = false; var anyTtxPid = -1; var anyLang = ""
+        val found = ArrayList<SubPage>()
+        var pidOfTtx = -1; var anyTtx = false
         while (i + 5 <= s.size - 4) {
             val pid = ((s[i + 1].toInt() and 0x1F) shl 8) or (s[i + 2].toInt() and 0xFF)
             val esLen = ((s[i + 3].toInt() and 0x0F) shl 8) or (s[i + 4].toInt() and 0xFF)
@@ -144,16 +165,14 @@ class TeletextDecoder(
                 val tag = s[d].toInt() and 0xFF
                 val len = s[d + 1].toInt() and 0xFF
                 if (tag == 0x56) {
-                    anyTtx = true; if (anyTtxPid < 0) { anyTtxPid = pid; anyLang = if (len >= 3) String(s, d + 2, 3, Charsets.ISO_8859_1) else "" }
+                    anyTtx = true; if (pidOfTtx < 0) pidOfTtx = pid
                     var k = d + 2
                     while (k + 5 <= d + 2 + len && k + 5 <= s.size) {
                         val lang = String(s, k, 3, Charsets.ISO_8859_1)
                         val type = (s[k + 3].toInt() shr 3) and 0x1F
                         var mag = s[k + 3].toInt() and 7; if (mag == 0) mag = 8
                         val pg = s[k + 4].toInt() and 0xFF
-                        if ((type == 2 || type == 5) && (best < 0 || type == 2 && bestLang.isEmpty())) {
-                            best = pid; bestPage = (mag shl 8) or pg; bestLang = lang
-                        }
+                        if (type == 2 || type == 5) found.add(SubPage(lang, type, (mag shl 8) or pg))
                         k += 5
                     }
                 }
@@ -161,15 +180,19 @@ class TeletextDecoder(
             }
             i += 5 + esLen
         }
-        if (best >= 0) {
-            ttxPid = best; targetPage = if (forcedPage != 0) forcedPage else bestPage; langHint = bestLang
-            onInfo("Télétexte détecté : page %X (%s)".format(targetPage, bestLang))
-        } else if (anyTtx) {
-            // Pas de page « sous-titres » déclarée : on essaie la page 150 (ARD, ZDF…) ou la page forcée
-            ttxPid = anyTtxPid; targetPage = if (forcedPage != 0) forcedPage else 0x150; langHint = anyLang
-            onInfo("Télétexte détecté, sous-titres non déclarés : page %X essayée".format(targetPage))
-        } else {
-            onInfo("Pas de télétexte sur cette chaîne")
+        if (anyTtx) ttxPid = pidOfTtx
+        candidates = found
+        onPages(found)
+        when {
+            found.isNotEmpty() -> {
+                targets = if (forcedPage != 0) setOf(forcedPage) else found.map { it.page }.toSet()
+                onInfo("Télétexte détecté : " + found.joinToString(", ") { it.label })
+            }
+            anyTtx -> {
+                targets = setOf(if (forcedPage != 0) forcedPage else 0x150)
+                onInfo("Télétexte détecté, sous-titres non déclarés : page %X essayée".format(targets.first()))
+            }
+            else -> onInfo("Pas de télétexte sur cette chaîne")
         }
     }
 
@@ -197,23 +220,34 @@ class TeletextDecoder(
         if (y == 0) {
             val pn = (m shl 8) or (unham(rev(u[o + 5])) shl 4) or unham(rev(u[o + 4]))
             nHdr++; if (seenPages.size < 40) seenPages.add(pn)
-            if (receiving && (pn shr 8) == (targetPage shr 8)) flush()
-            if (targetPage != 0 && pn == targetPage) {
-                receiving = true; rows.fill(null); nTarget++
-                charset = (unham(rev(u[o + 4 + 7])) and 0x0E) shr 1
-            } else if ((pn shr 8) == (targetPage shr 8)) receiving = false
-        } else if (y in 1..23 && receiving && m == (targetPage shr 8)) {
+            if (receiving != 0 && (pn shr 8) == (receiving shr 8)) flush()
+            if (pn in targets) {
+                receiving = pn; rows.fill(null); nTarget++
+                // Jeu de caractères national : les 3 bits C12-C14 sont dans l'ordre inverse
+                val c = (unham(rev(u[o + 4 + 7])) and 0x0E) shr 1
+                charset = ((c and 1) shl 2) or (c and 2) or ((c shr 2) and 1)
+            } else receiving = 0
+        } else if (y in 1..23 && receiving != 0 && m == (receiving shr 8)) {
             val sb = StringBuilder(40)
-            val cs = if (charset == 0 && langHint == "ger") 1 else if (charset == 0 && (langHint == "fre" || langHint == "fra")) 4 else charset
-            for (k in 0 until 40) sb.append(char(rev(u[o + 4 + k]) and 0x7F, cs))
+            for (k in 0 until 40) sb.append(char(rev(u[o + 4 + k]) and 0x7F, charset))
             rows[y] = sb.toString()
         }
     }
 
     private fun flush() {
+        val page = receiving
         val text = (1..23).mapNotNull { rows[it]?.trim() }.filter { it.isNotEmpty() }.joinToString(" ").replace(Regex("\\s+"), " ")
-        receiving = false
-        if (text != lastText) { lastText = text; nPages++; if (text.isNotEmpty()) lastRaw = text.take(40); onPage(text) }
+        receiving = 0
+        val now = System.currentTimeMillis()
+        if (text.isEmpty()) {
+            // Page vide = effacement, seulement pour la page qui sert actuellement
+            if (page == active && lastText.isNotEmpty()) { lastText = ""; onPage("") }
+            return
+        }
+        // Plusieurs pages (langues) : on suit celle qui parle, et on ne change que si elle se tait depuis 15 s
+        if (active != 0 && page != active && now - activeAt < 15000) return
+        active = page; activeAt = now
+        if (text != lastText) { lastText = text; nPages++; lastRaw = text.take(40); onPage(text) }
     }
 
     private fun char(c: Int, cs: Int): Char {
@@ -306,9 +340,13 @@ class LiveSubs(private val prefs: Prefs) {
     private val clearTask = Runnable { original = null; translated = null }
     @Volatile private var gen = 0
 
+    var pages by mutableStateOf<List<SubPage>>(emptyList()); private set
+    var chosenPage by mutableStateOf(0); private set   // 0 = automatique (toutes les pages déclarées)
+
     private val decoder = TeletextDecoder(
         onPage = { t -> main.post { onPage(t) } },
         onInfo = { t -> main.post { status = t } },
+        onPages = { l -> main.post { pages = l } },
     )
     private val relay = TsRelay { d, n -> synchronized(decoder) { decoder.feed(d, n) } }
 
@@ -317,9 +355,12 @@ class LiveSubs(private val prefs: Prefs) {
         clearNow()
         if (!ready) { relay.stop(); if (enabled) status = "Clé DeepL manquante"; return url }
         synchronized(decoder) { decoder.reset(); decoder.forcedPage = page }
-        status = "Recherche du télétexte…"
+        status = "Recherche du télétexte…"; pages = emptyList(); chosenPage = 0
         return relay.start(url)
     }
+
+    /** Choix d'une page de sous-titres pour la chaîne en cours (0 = automatique). */
+    fun pickPage(p: Int) { chosenPage = p; synchronized(decoder) { decoder.selectPage(p) }; clearNow() }
 
     fun stop() { relay.stop(); clearNow() }
 

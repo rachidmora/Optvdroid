@@ -312,6 +312,15 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
         Text("Afficher aussi le texte d'origine", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Switch(checked = live.showOriginal, onCheckedChange = { live.changeShowOriginal(it) })
     }
+    if (live.pages.isNotEmpty()) {
+        Text("Pages de sous-titres de cette chaîne", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = live.chosenPage == 0, onClick = { live.pickPage(0) }, label = { Text("Auto", fontSize = 13.sp) })
+            live.pages.forEach { sp ->
+                FilterChip(selected = live.chosenPage == sp.page, onClick = { live.pickPage(sp.page) }, label = { Text(sp.label, fontSize = 13.sp) })
+            }
+        }
+    }
     var pageText by remember { mutableStateOf(if (live.page != 0) "%X".format(live.page) else "") }
     OutlinedTextField(
         pageText, { pageText = it.filter { ch -> ch.isDigit() }.take(3) }, singleLine = true,
