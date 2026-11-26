@@ -323,9 +323,9 @@ class LiveSubs(private val prefs: Prefs) {
         }
     } catch (e: Exception) { main.post { status = "DeepL inaccessible : ${e.message}" }; null }
 
-    fun setEnabled(v: Boolean) { enabled = v; prefs.ttxEnabled = v }
-    fun setKey(v: String) { apiKey = v.trim(); prefs.deeplKey = apiKey }
-    fun setTarget(v: String) { target = v; prefs.ttxTarget = v; cache.clear() }
-    fun setShowOriginal(v: Boolean) { showOriginal = v; prefs.ttxShowOriginal = v }
-    fun setPage(v: Int) { page = v; prefs.ttxPage = v }
+    fun changeEnabled(v: Boolean) { enabled = v; prefs.ttxEnabled = v }
+    fun changeKey(v: String) { apiKey = v.trim(); prefs.deeplKey = apiKey }
+    fun changeTarget(v: String) { target = v; prefs.ttxTarget = v; cache.clear() }
+    fun changeShowOriginal(v: Boolean) { showOriginal = v; prefs.ttxShowOriginal = v }
+    fun changePage(v: Int) { page = v; prefs.ttxPage = v }
 }

@@ -294,23 +294,23 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
     SectionTitle("Traduire le télétexte (ARD, ZDF…)")
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Traduction en direct", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Switch(checked = live.enabled, onCheckedChange = { live.setEnabled(it); c.restart() })
+        Switch(checked = live.enabled, onCheckedChange = { live.changeEnabled(it); c.restart() })
     }
     var keyText by remember { mutableStateOf(live.apiKey) }
     OutlinedTextField(
         keyText, { keyText = it }, singleLine = true, label = { Text("Clé DeepL (se termine par :fx si gratuite)") },
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
     )
-    Button({ live.setKey(keyText); c.restart() }, Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Enregistrer la clé et relancer") }
+    Button({ live.changeKey(keyText); c.restart() }, Modifier.fillMaxWidth().padding(top = 6.dp)) { Text("Enregistrer la clé et relancer") }
     Spacer(Modifier.height(6.dp))
-    ChipRow(listOf("AR", "FR", "EN-GB"), live.target, { when (it) { "AR" -> "العربية"; "FR" -> "Français"; else -> "English" } }) { live.setTarget(it) }
+    ChipRow(listOf("AR", "FR", "EN-GB"), live.target, { when (it) { "AR" -> "العربية"; "FR" -> "Français"; else -> "English" } }) { live.changeTarget(it) }
     if (live.status.isNotBlank()) {
         Text(live.status, color = if (live.status.contains("refus") || live.status.contains("Quota") || live.status.contains("inaccess") || live.status.startsWith("Pas de") || live.status.contains("manquante")) MaterialTheme.colorScheme.error else KeyGreen,
             fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
     }
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("Afficher aussi le texte d'origine", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Switch(checked = live.showOriginal, onCheckedChange = { live.setShowOriginal(it) })
+        Switch(checked = live.showOriginal, onCheckedChange = { live.changeShowOriginal(it) })
     }
     Hint("Le télétexte est lu dans le flux de la chaîne puis traduit. Ça ne marche que sur les chaînes qui envoient des sous-titres télétexte. Si la traduction est en avance ou en retard, utilise « Retard vidéo » dans le panneau Audio.")
 
