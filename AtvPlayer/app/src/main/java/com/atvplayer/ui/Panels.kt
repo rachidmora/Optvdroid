@@ -329,6 +329,15 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
             }
         }
     }
+    if (live.dvbStreams.isNotEmpty()) {
+        Text("Sous-titres DVB (images) de cette chaîne", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = live.chosenDvb == 0, onClick = { live.pickDvb(0) }, label = { Text("Auto", fontSize = 13.sp) })
+            live.dvbStreams.forEach { st ->
+                FilterChip(selected = live.chosenDvb == st.pid, onClick = { live.pickDvb(st.pid) }, label = { Text(st.label, fontSize = 13.sp) })
+            }
+        }
+    }
     var pageText by remember { mutableStateOf(if (live.page != 0) "%X".format(live.page) else "") }
     OutlinedTextField(
         pageText, { pageText = it.filter { ch -> ch.isDigit() }.take(3) }, singleLine = true,

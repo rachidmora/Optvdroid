@@ -12,8 +12,8 @@ android {
         applicationId = "com.atvplayer"
         minSdk = 24
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.4.5"
+        versionCode = 10
+        versionName = "0.5.0"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
@@ -41,4 +41,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.videolan.android:libvlc-all:3.6.0")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }

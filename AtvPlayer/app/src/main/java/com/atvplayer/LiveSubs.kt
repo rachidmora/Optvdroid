@@ -29,7 +29,12 @@ class TeletextDecoder(
     private val onPage: (String) -> Unit,
     private val onInfo: (String) -> Unit,
     private val onPages: (List<SubPage>) -> Unit,
+    private val onDvbStreams: (List<DvbStream>) -> Unit = {},
+    private val onDvbPes: (DvbStream, ByteArray) -> Unit = { _, _ -> },
 ) {
+    private var dvb = mapOf<Int, DvbStream>()
+    private val dvbBuf = HashMap<Int, ByteArray>()
+
     /** Page forcée (ex. 0x150) ; 0 = toutes les pages de sous-titres déclarées. */
     var forcedPage = 0
 
@@ -66,6 +71,7 @@ class TeletextDecoder(
         nBytes = 0; nPmt = 0; nPmtPk = 0; nUnits = 0; nHdr = 0; nTarget = 0; nPages = 0; seenPages = LinkedHashSet(); lastRaw = ""
         carry = ByteArray(0); pmtPids.clear(); pmtDone = false; ttxPid = -1; targets = emptySet(); candidates = emptyList()
         pes = ByteArray(0); receiving = 0; active = 0; lastText = ""; rows.fill(null)
+        dvb = emptyMap(); dvbBuf.clear()
     }
 
     /** Choix manuel d'une page pour cette chaîne (0 = toutes). */
@@ -99,11 +105,24 @@ class TeletextDecoder(
             // Le flux contient le PAT de tout le multiplex : on prend le PMT qui arrive vraiment
             pid in pmtPids && !pmtDone -> { nPmtPk++; pmt.add(a, p, end, pusi)?.let { parsePmt(it) } }
             ttxPid < 0 && pusi && pid != 0 && pid !in pmtPids -> sniff(pid, a, p, end)
+            dvb.containsKey(pid) -> dvbPacket(pid, a, p, end, pusi)
             pid == ttxPid -> {
                 if (pusi) { if (pes.isNotEmpty()) processPes(pes); pes = a.copyOfRange(p, end) }
                 else if (pes.isNotEmpty()) pes += a.copyOfRange(p, end)
             }
         }
+    }
+
+    /** Assemble les PES de sous-titres DVB ; un PES est livré dès qu'il est complet (longueur de l'en-tête). */
+    private fun dvbPacket(pid: Int, a: ByteArray, p: Int, end: Int, pusi: Boolean) {
+        val chunk = a.copyOfRange(p, end)
+        var b = if (pusi) chunk else (dvbBuf[pid]?.plus(chunk) ?: return)
+        val st = dvb[pid] ?: return
+        if (b.size >= 6) {
+            val total = (((b[4].toInt() and 0xFF) shl 8) or (b[5].toInt() and 0xFF)) + 6
+            if (total > 6 && b.size >= total) { onDvbPes(st, b.copyOf(total)); dvbBuf.remove(pid); return }
+        }
+        dvbBuf[pid] = b
     }
 
     /** Repère un flux télétexte sans passer par le PMT : PES 0xBD dont le premier octet est 0x10-0x1F. */
@@ -156,6 +175,7 @@ class TeletextDecoder(
         var i = 12 + pil
         val found = ArrayList<SubPage>()
         var pidOfTtx = -1; var anyTtx = false
+        val dv = ArrayList<DvbStream>()
         while (i + 5 <= s.size - 4) {
             val pid = ((s[i + 1].toInt() and 0x1F) shl 8) or (s[i + 2].toInt() and 0xFF)
             val esLen = ((s[i + 3].toInt() and 0x0F) shl 8) or (s[i + 4].toInt() and 0xFF)
@@ -176,6 +196,15 @@ class TeletextDecoder(
                         k += 5
                     }
                 }
+                if (tag == 0x59) {
+                    var k = d + 2
+                    while (k + 8 <= d + 2 + len && k + 8 <= s.size) {
+                        dv.add(DvbStream(pid, String(s, k, 3, Charsets.ISO_8859_1), s[k + 3].toInt() and 0xFF,
+                            ((s[k + 4].toInt() and 0xFF) shl 8) or (s[k + 5].toInt() and 0xFF),
+                            ((s[k + 6].toInt() and 0xFF) shl 8) or (s[k + 7].toInt() and 0xFF)))
+                        k += 8
+                    }
+                }
                 d += 2 + len
             }
             i += 5 + esLen
@@ -183,16 +212,18 @@ class TeletextDecoder(
         if (anyTtx) ttxPid = pidOfTtx
         candidates = found
         onPages(found)
+        dvb = dv.associateBy { it.pid }; onDvbStreams(dv)
         when {
             found.isNotEmpty() -> {
                 targets = if (forcedPage != 0) setOf(forcedPage) else found.map { it.page }.toSet()
                 onInfo("Télétexte détecté : " + found.joinToString(", ") { it.label })
             }
-            anyTtx -> {
+            anyTtx && dv.isEmpty() -> {
                 targets = setOf(if (forcedPage != 0) forcedPage else 0x150)
                 onInfo("Télétexte détecté, sous-titres non déclarés : page %X essayée".format(targets.first()))
             }
-            else -> onInfo("Pas de télétexte sur cette chaîne")
+            dv.isNotEmpty() -> onInfo("Sous-titres DVB détectés : " + dv.joinToString(", ") { it.label })
+            else -> onInfo("Pas de télétexte ni de sous-titres DVB sur cette chaîne")
         }
     }
 
@@ -335,7 +366,7 @@ class LiveSubs(private val prefs: Prefs) {
     var translated by mutableStateOf<String?>(null); private set
 
     val ready: Boolean get() = enabled && apiKey.isNotBlank()
-    fun debug(): String = synchronized(decoder) { decoder.stats() }
+    fun debug(): String = synchronized(decoder) { decoder.stats() } + (if (dvbStreams.isNotEmpty()) " · DVB: ${dvbStreams.size} flux, images ${dvbImages}, source ${source}${if (dvbLast.isNotEmpty()) ", dernier : $dvbLast" else ""}" else "")
 
     private val main = Handler(Looper.getMainLooper())
     private val client = OkHttpClient.Builder().connectTimeout(6, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
@@ -346,18 +377,61 @@ class LiveSubs(private val prefs: Prefs) {
     var pages by mutableStateOf<List<SubPage>>(emptyList()); private set
     var chosenPage by mutableStateOf(0); private set   // 0 = automatique (toutes les pages déclarées)
 
+    var dvbStreams by mutableStateOf<List<DvbStream>>(emptyList()); private set
+    var chosenDvb by mutableStateOf(0); private set   // PID, 0 = automatique
+    /** 0 = rien reçu, 1 = télétexte, 2 = DVB-SUB : la première source qui parle est gardée pour la chaîne. */
+    @Volatile private var source = 0
+    @Volatile private var activeDvb = 0
+    private var dvbImages = 0; private var dvbLast = ""
+    private val dvbDecoders = HashMap<Int, DvbSubDecoder>()
+    private val ocr by lazy { com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private var dvbTask: Runnable? = null
+
     private val decoder = TeletextDecoder(
-        onPage = { t -> main.post { onPage(t) } },
+        onPage = { t -> main.post { if (source != 2) { if (t.isNotBlank()) source = 1; onPage(t) } } },
         onInfo = { t -> main.post { status = t } },
         onPages = { l -> main.post { pages = l } },
+        onDvbStreams = { l -> main.post { dvbStreams = l } },
+        onDvbPes = { st, pes -> dvbPes(st, pes) },
     )
+
+    // Appelé sous le verrou du décodeur, depuis le fil du relais
+    private fun dvbPes(st: DvbStream, pes: ByteArray) {
+        if (source == 1) return
+        if (chosenDvb != 0 && st.pid != chosenDvb) return
+        if (activeDvb != 0 && st.pid != activeDvb) return
+        val dec = dvbDecoders.getOrPut(st.pid) { DvbSubDecoder(st) { bmp -> dvbImage(st, bmp) } }
+        dec.feedPes(pes)
+    }
+
+    private fun dvbImage(st: DvbStream, bmp: android.graphics.Bitmap?) {
+        if (bmp == null) { main.post { dvbText(st, "") }; return }
+        dvbImages++
+        ocr.process(com.google.mlkit.vision.common.InputImage.fromBitmap(bmp, 0))
+            .addOnSuccessListener { r ->
+                val t = r.textBlocks.flatMap { it.lines }.joinToString(" ") { it.text }.replace(Regex("\\s+"), " ").trim()
+                dvbText(st, t)
+            }
+            .addOnFailureListener { e -> status = "OCR : ${e.message}" }
+    }
+
+    /** Les sous-titres arrivent parfois en deux temps (ligne 1, puis lignes 1+2) : on attend un instant avant de traduire. */
+    private fun dvbText(st: DvbStream, t: String) {
+        if (source == 1) return
+        if (t.isNotBlank()) { source = 2; activeDvb = st.pid; dvbLast = t.take(40) }
+        dvbTask?.let { main.removeCallbacks(it) }
+        val task = Runnable { dvbTask = null; onPage(t) }
+        dvbTask = task
+        main.postDelayed(task, if (t.isBlank()) 0L else 450L)
+    }
     private val relay = TsRelay { d, n -> synchronized(decoder) { decoder.feed(d, n) } }
 
     /** Renvoie l'URL à donner à VLC : le relais local si la traduction est active, sinon l'URL d'origine. */
     fun wrap(url: String): String {
         clearNow()
         if (!ready) { relay.stop(); if (enabled) status = "Clé DeepL manquante"; return url }
-        synchronized(decoder) { decoder.reset(); decoder.forcedPage = page }
+        synchronized(decoder) { decoder.reset(); decoder.forcedPage = page; dvbDecoders.clear() }
+        source = 0; activeDvb = 0; dvbImages = 0; dvbLast = ""; dvbStreams = emptyList(); chosenDvb = 0
         status = "Recherche du télétexte…"; pages = emptyList(); chosenPage = 0
         return relay.start(url)
     }
@@ -365,11 +439,15 @@ class LiveSubs(private val prefs: Prefs) {
     /** Choix d'une page de sous-titres pour la chaîne en cours (0 = automatique). */
     fun pickPage(p: Int) { chosenPage = p; synchronized(decoder) { decoder.selectPage(p) }; clearNow() }
 
+    /** Choix d'un flux DVB-SUB pour la chaîne en cours (0 = automatique). */
+    fun pickDvb(pid: Int) { chosenDvb = pid; activeDvb = 0; source = 0; synchronized(decoder) { dvbDecoders.clear() }; clearNow() }
+
     fun stop() { relay.stop(); clearNow() }
 
     private fun clearNow() {
         gen++; main.removeCallbacks(clearTask); original = null; translated = null
         pending.forEach { main.removeCallbacks(it) }; pending.clear()
+        dvbTask?.let { main.removeCallbacks(it) }; dvbTask = null
     }
 
     /** Arrivée d'une phrase : on traduit tout de suite, mais on l'affiche avec le retard réglé. */
