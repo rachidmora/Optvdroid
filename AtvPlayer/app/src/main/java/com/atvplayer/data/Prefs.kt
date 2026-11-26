@@ -111,4 +111,7 @@ class Prefs(ctx: Context) {
     var ttxDelayMs: Int
         get() = sp.getInt("ttxDelayMs", 1500)
         set(v) { sp.edit().putInt("ttxDelayMs", v).apply() }
+    var uiScale: Float
+        get() = sp.getFloat("uiScale", 1f)
+        set(v) { sp.edit().putFloat("uiScale", v).apply() }
 }

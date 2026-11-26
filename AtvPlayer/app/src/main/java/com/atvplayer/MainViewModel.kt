@@ -19,6 +19,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     var bouquets by mutableStateOf<List<Bouquet>>(emptyList()); private set
     var satellites by mutableStateOf<List<Bouquet>>(emptyList()); private set
+    var uiScale by mutableStateOf(prefs.uiScale); private set
+    fun changeUiScale(v: Float) { uiScale = v; prefs.uiScale = v }
+
     var favorites by mutableStateOf(prefs.loadFavorites()); private set
 
     /** Favoris, puis bouquets, puis satellites. */

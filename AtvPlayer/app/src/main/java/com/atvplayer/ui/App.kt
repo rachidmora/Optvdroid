@@ -1,6 +1,10 @@
 package com.atvplayer.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Slider
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,13 +26,13 @@ fun App(vm: MainViewModel) {
 
     PlayerScreen(vm, onOpenSettings = { showSetup = true })
 
-    if (showSetup) SetupDialog(vm.config, onDismiss = { showSetup = false }) {
+    if (showSetup) SetupDialog(vm.config, vm.uiScale, vm::changeUiScale, onDismiss = { showSetup = false }) {
         vm.saveConfig(it); showSetup = false
     }
 }
 
 @Composable
-private fun SetupDialog(cfg: BoxConfig, onDismiss: () -> Unit, onSave: (BoxConfig) -> Unit) {
+private fun SetupDialog(cfg: BoxConfig, scale: Float, onScale: (Float) -> Unit, onDismiss: () -> Unit, onSave: (BoxConfig) -> Unit) {
     var host by remember { mutableStateOf(cfg.host) }
     var http by remember { mutableStateOf(cfg.httpPort.toString()) }
     var stream by remember { mutableStateOf(cfg.streamPort.toString()) }
@@ -42,7 +46,7 @@ private fun SetupDialog(cfg: BoxConfig, onDismiss: () -> Unit, onSave: (BoxConfi
         containerColor = Pal.Surface,
         title = { Text("Récepteur OpenWebIF") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(host, { host = it }, label = { Text("Adresse IP (ex: 192.168.1.20)") }, singleLine = true)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(http, { http = it }, label = { Text("Port web") }, singleLine = true, keyboardOptions = num)
@@ -57,6 +61,10 @@ private fun SetupDialog(cfg: BoxConfig, onDismiss: () -> Unit, onSave: (BoxConfi
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(tmdb, { tmdb = it }, label = { Text("Clé TMDB pour les posters (optionnel)") }, singleLine = true)
+                Spacer(Modifier.height(12.dp))
+                Text("Taille de l'interface (DPI) : ${(scale * 100).roundToInt()} %", color = Pal.Text)
+                Slider(scale, { onScale((it * 20).roundToInt() / 20f) }, valueRange = 0.6f..1.6f)
+                TextButton({ onScale(1f) }) { Text("Remettre à 100 %") }
             }
         },
         confirmButton = {

@@ -308,7 +308,14 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
         Text(live.status, color = if (live.status.contains("refus") || live.status.contains("Quota") || live.status.contains("inaccess") || live.status.startsWith("Pas de") || live.status.contains("manquante")) MaterialTheme.colorScheme.error else KeyGreen,
             fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
     }
-    LabeledSlider("Retard d'affichage (ms) : monte si la traduction est en avance", live.delayMs.toFloat(), 0f..6000f) { live.changeDelay((it / 100).toInt() * 100) }
+    Text("Synchro : + si la traduction apparaît avant l'image", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+    Text("%.1f s".format(live.delayMs / 1000f), color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(-1000, -100, 100, 1000).forEach { st ->
+            val label = (if (st > 0) "+" else "−") + (if (kotlin.math.abs(st) >= 1000) "1 s" else "0.1 s")
+            FilledTonalButton({ live.changeDelay((live.delayMs + st).coerceIn(0, 12000)) }, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text(label, fontSize = 13.sp) }
+        }
+    }
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("Afficher aussi le texte d'origine", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Switch(checked = live.showOriginal, onCheckedChange = { live.changeShowOriginal(it) })
