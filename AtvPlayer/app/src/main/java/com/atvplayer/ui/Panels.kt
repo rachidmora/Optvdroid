@@ -308,6 +308,7 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
         Text(live.status, color = if (live.status.contains("refus") || live.status.contains("Quota") || live.status.contains("inaccess") || live.status.startsWith("Pas de") || live.status.contains("manquante")) MaterialTheme.colorScheme.error else KeyGreen,
             fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
     }
+    LabeledSlider("Retard d'affichage (ms) : monte si la traduction est en avance", live.delayMs.toFloat(), 0f..6000f) { live.changeDelay((it / 100).toInt() * 100) }
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("Afficher aussi le texte d'origine", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Switch(checked = live.showOriginal, onCheckedChange = { live.changeShowOriginal(it) })

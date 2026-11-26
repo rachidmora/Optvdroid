@@ -328,6 +328,9 @@ class LiveSubs(private val prefs: Prefs) {
     var showOriginal by mutableStateOf(prefs.ttxShowOriginal); private set
     var page by mutableStateOf(prefs.ttxPage); private set   // 0 = auto
     var status by mutableStateOf(""); private set
+    /** Retard d'affichage : le télétexte arrive avant l'image (cache de VLC), on le retient pour caler sur la voix. */
+    var delayMs by mutableStateOf(prefs.ttxDelayMs); private set
+    private val pending = ArrayList<Runnable>()
     var original by mutableStateOf<String?>(null); private set
     var translated by mutableStateOf<String?>(null); private set
 
@@ -364,9 +367,24 @@ class LiveSubs(private val prefs: Prefs) {
 
     fun stop() { relay.stop(); clearNow() }
 
-    private fun clearNow() { gen++; main.removeCallbacks(clearTask); original = null; translated = null }
+    private fun clearNow() {
+        gen++; main.removeCallbacks(clearTask); original = null; translated = null
+        pending.forEach { main.removeCallbacks(it) }; pending.clear()
+    }
 
+    /** Arrivée d'une phrase : on traduit tout de suite, mais on l'affiche avec le retard réglé. */
     private fun onPage(text: String) {
+        if (text.isNotBlank() && cache[text] == null) {
+            thread(isDaemon = true) { translate(text)?.let { tr -> main.post { cache[text] = tr } } }
+        }
+        val task = object : Runnable {
+            override fun run() { pending.remove(this); show(text) }
+        }
+        pending.add(task)
+        main.postDelayed(task, delayMs.toLong())
+    }
+
+    private fun show(text: String) {
         main.removeCallbacks(clearTask)
         if (text.isBlank()) { original = null; translated = null; return }
         val g = ++gen
@@ -401,6 +419,7 @@ class LiveSubs(private val prefs: Prefs) {
     fun changeEnabled(v: Boolean) { enabled = v; prefs.ttxEnabled = v }
     fun changeKey(v: String) { apiKey = v.trim(); prefs.deeplKey = apiKey }
     fun changeTarget(v: String) { target = v; prefs.ttxTarget = v; cache.clear() }
+    fun changeDelay(v: Int) { delayMs = v; prefs.ttxDelayMs = v }
     fun changeShowOriginal(v: Boolean) { showOriginal = v; prefs.ttxShowOriginal = v }
     fun changePage(v: Int) { page = v; prefs.ttxPage = v }
 }

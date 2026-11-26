@@ -108,4 +108,7 @@ class Prefs(ctx: Context) {
     var ttxPage: Int
         get() = sp.getInt("ttxPage", 0)
         set(v) { sp.edit().putInt("ttxPage", v).apply() }
+    var ttxDelayMs: Int
+        get() = sp.getInt("ttxDelayMs", 1500)
+        set(v) { sp.edit().putInt("ttxDelayMs", v).apply() }
 }
