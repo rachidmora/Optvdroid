@@ -43,15 +43,15 @@ class TeletextDecoder(
     private var lastText = ""
 
     // Diagnostic
-    private var nBytes = 0L; private var nPmt = 0; private var nUnits = 0L; private var nHdr = 0L; private var nTarget = 0L; private var nPages = 0; private var seenPages = LinkedHashSet<Int>()
+    private var nBytes = 0L; private var nPmt = 0; private var nPmtPk = 0; private var pmtDone = false; private var nUnits = 0L; private var nHdr = 0L; private var nTarget = 0L; private var nPages = 0; private var seenPages = LinkedHashSet<Int>()
     private var lastRaw = ""
-    fun stats(): String = "flux %d Ko · PMT:%s · PID TTX:%s · page cible:%s · unités TTX:%d · en-têtes:%d (cible:%d) · pages vues:%s · sous-titres lus:%d%s".format(
-        nBytes / 1024, if (pmtPid >= 0) (if (nPmt > 0) "ok" else "attente") else "?", if (ttxPid >= 0) "0x%X".format(ttxPid) else "aucun",
+    fun stats(): String = "flux %d Ko · PMT:%s(pid %s, paquets %d) · PID TTX:%s · page cible:%s · unités TTX:%d · en-têtes:%d (cible:%d) · pages vues:%s · sous-titres lus:%d%s".format(
+        nBytes / 1024, if (pmtPid >= 0) (if (nPmt > 0) "ok" else "attente") else "?", if (pmtPid >= 0) "0x%X".format(pmtPid) else "-", nPmtPk, if (ttxPid >= 0) "0x%X".format(ttxPid) else "aucun",
         if (targetPage != 0) "%X".format(targetPage) else "-", nUnits, nHdr, nTarget, seenPages.take(8).joinToString(",") { "%X".format(it) }, nPages,
         if (lastRaw.isNotEmpty()) " · dernier: $lastRaw" else "")
 
     fun reset() {
-        nBytes = 0; nPmt = 0; nUnits = 0; nHdr = 0; nTarget = 0; nPages = 0; seenPages = LinkedHashSet(); lastRaw = ""
+        nBytes = 0; nPmt = 0; nPmtPk = 0; pmtDone = false; nUnits = 0; nHdr = 0; nTarget = 0; nPages = 0; seenPages = LinkedHashSet(); lastRaw = ""
         carry = ByteArray(0); pmtPid = -1; ttxPid = -1; targetPage = 0; langHint = ""
         pes = ByteArray(0); receiving = false; lastText = ""; rows.fill(null)
     }
@@ -77,11 +77,28 @@ class TeletextDecoder(
         if (afc and 1 == 0 || p >= end) return
         when {
             pid == 0 && pmtPid < 0 -> pat.add(a, p, end, pusi)?.let { parsePat(it) }
-            pid == pmtPid && ttxPid < 0 -> pmt.add(a, p, end, pusi)?.let { parsePmt(it) }
+            pid == pmtPid && !pmtDone -> { nPmtPk++; pmt.add(a, p, end, pusi)?.let { parsePmt(it) } }
+            ttxPid < 0 && pusi && pid != 0 && pid != pmtPid -> sniff(pid, a, p, end)
             pid == ttxPid -> {
                 if (pusi) { if (pes.isNotEmpty()) processPes(pes); pes = a.copyOfRange(p, end) }
                 else if (pes.isNotEmpty()) pes += a.copyOfRange(p, end)
             }
+        }
+    }
+
+    /** Repère un flux télétexte sans passer par le PMT : PES 0xBD dont le premier octet est 0x10-0x1F. */
+    private fun sniff(pid: Int, a: ByteArray, p: Int, end: Int) {
+        if (p + 14 > end) return
+        if (a[p].toInt() != 0 || a[p + 1].toInt() != 0 || a[p + 2].toInt() != 1 || (a[p + 3].toInt() and 0xFF) != 0xBD) return
+        val st = p + 9 + (a[p + 8].toInt() and 0xFF)
+        if (st + 3 > end) return
+        val di = a[st].toInt() and 0xFF
+        val unit = a[st + 1].toInt() and 0xFF
+        val len = a[st + 2].toInt() and 0xFF
+        if (di in 0x10..0x1F && (unit == 0x02 || unit == 0x03 || unit == 0xFF) && len == 44) {
+            ttxPid = pid
+            if (targetPage == 0) targetPage = if (forcedPage != 0) forcedPage else 0x150
+            onInfo("Télétexte détecté (PID 0x%X) : page %X essayée".format(pid, targetPage))
         }
     }
 
@@ -114,7 +131,7 @@ class TeletextDecoder(
 
     private fun parsePmt(s: ByteArray) {
         if (s.size < 16) return
-        nPmt++
+        nPmt++; pmtDone = true
         val pil = ((s[10].toInt() and 0x0F) shl 8) or (s[11].toInt() and 0xFF)
         var i = 12 + pil
         var best = -1; var bestPage = 0; var bestLang = ""; var anyTtx = false; var anyTtxPid = -1; var anyLang = ""
