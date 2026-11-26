@@ -312,6 +312,17 @@ private fun SubsPanel(c: PlayerController, subs: SubtitleEngine, eventBegin: Lon
         Text("Afficher aussi le texte d'origine", color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Switch(checked = live.showOriginal, onCheckedChange = { live.changeShowOriginal(it) })
     }
+    var pageText by remember { mutableStateOf(if (live.page != 0) "%X".format(live.page) else "") }
+    OutlinedTextField(
+        pageText, { pageText = it.filter { ch -> ch.isDigit() }.take(3) }, singleLine = true,
+        label = { Text("Page des sous-titres (vide = auto, ex. 150)") },
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+    )
+    OutlinedButton({ live.changePage(pageText.toIntOrNull(16) ?: 0); c.restart() }, Modifier.padding(top = 4.dp)) { Text("Appliquer la page") }
+    if (live.enabled) {
+        val dbg by produceState("", live) { while (true) { value = live.debug(); delay(700) } }
+        Text("Diagnostic : $dbg", color = Pal.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+    }
     Hint("Le télétexte est lu dans le flux de la chaîne puis traduit. Ça ne marche que sur les chaînes qui envoient des sous-titres télétexte. Si la traduction est en avance ou en retard, utilise « Retard vidéo » dans le panneau Audio.")
 
     // --- SRT : lecteur à part, démarré au même état que le film (EPG) ---
