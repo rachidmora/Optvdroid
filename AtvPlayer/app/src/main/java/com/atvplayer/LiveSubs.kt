@@ -104,8 +104,8 @@ class TeletextDecoder(
             pid == 0 && pmtPids.isEmpty() -> pat.add(a, p, end, pusi)?.let { parsePat(it) }
             // Le flux contient le PAT de tout le multiplex : on prend le PMT qui arrive vraiment
             pid in pmtPids && !pmtDone -> { nPmtPk++; pmt.add(a, p, end, pusi)?.let { parsePmt(it) } }
-            ttxPid < 0 && pusi && pid != 0 && pid !in pmtPids -> sniff(pid, a, p, end)
             dvb.containsKey(pid) -> dvbPacket(pid, a, p, end, pusi)
+            ttxPid < 0 && pusi && pid != 0 && pid !in pmtPids -> sniff(pid, a, p, end)
             pid == ttxPid -> {
                 if (pusi) { if (pes.isNotEmpty()) processPes(pes); pes = a.copyOfRange(p, end) }
                 else if (pes.isNotEmpty()) pes += a.copyOfRange(p, end)
